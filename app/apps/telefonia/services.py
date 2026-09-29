@@ -449,7 +449,13 @@ def estado_llamada_json(llamada):
         'campania': llamada.campania_contacto.campania.nombre if llamada.campania_contacto_id else '',
         'puede_cortar': ConfigAnura.get().puede_cortar,
         'anura_url': ConfigAnura.get().webphone_url,
+        # Anura todavía no avisó nada de esta llamada: el agente puede descartar el aviso si quedó trabado
+        'sin_aviso': llamada.viva and sin_eventos_de_anura(llamada),
     }
+
+
+def sin_eventos_de_anura(llamada):
+    return not (isinstance(llamada.payload, dict) and llamada.payload.get('eventos'))
 
 
 def discar(user, numero, oportunidad=None, contacto=None, campania_contacto=None, origen='click2call'):
@@ -482,7 +488,9 @@ def discar(user, numero, oportunidad=None, contacto=None, campania_contacto=None
         llamada.payload = {'error': str(e)}
         llamada.save(update_fields=['estado', 'procesada', 'payload'])
         raise ErrorTelefonia(str(e)) from e
-    campos = ['anura_uuid']
+    logger.info('Click2Dial OK llamada #%s ext=%s → %s', llamada.pk, interno.interno, str(resp.get('raw'))[:300])
+    campos = ['anura_uuid', 'payload']
+    llamada.payload = {'click2dial': resp.get('raw')}
     llamada.anura_uuid = resp.get('uuid') or ''
     if resp.get('call_id') and not Llamada.objects.filter(call_id=resp['call_id']).exists():
         llamada.call_id = resp['call_id']
@@ -493,11 +501,13 @@ def discar(user, numero, oportunidad=None, contacto=None, campania_contacto=None
     return llamada
 
 
-def colgar(user, llamada):
+def colgar(user, llamada, descartar=False):
     if llamada.agente_id != user.pk and not user.tiene_permiso('supervision'):
         raise ErrorTelefonia('No podés cortar una llamada de otro agente.')
     if not llamada.viva:
         return llamada
+    if descartar:
+        return descartar_llamada(llamada, motivo=f'descartada por {user.display_name}')
     config = ConfigAnura.get()
     if not config.puede_cortar:
         raise ErrorTelefonia('Anura no permite cortar por API: cortá desde tu teléfono o softphone.')
@@ -635,8 +645,26 @@ def _actualizar_contacto_campania(llamada):
     AgenteDiscador.objects.filter(agente_id=llamada.agente_id).update(libre_desde=timezone.now())
 
 
+def descartar_llamada(llamada, motivo):
+    """Cierra en el CRM una llamada de la que Anura nunca avisó nada (el aviso quedó trabado en 'Discando')."""
+    if not llamada.call_id and not llamada.anura_uuid:
+        llamada.anura_uuid = f'local-{llamada.pk}'
+        Llamada.objects.filter(pk=llamada.pk).update(anura_uuid=llamada.anura_uuid)
+    logger.warning('Llamada #%s cerrada sin eventos de Anura (%s). Respuesta de Click2Dial: %s', llamada.pk, motivo,
+                   str((llamada.payload or {}).get('click2dial'))[:300])
+    procesar_evento_llamada({'callId': llamada.call_id or '', 'uuid': llamada.anura_uuid, 'custom1': f'crm-{llamada.pk}',
+                             'status': 'FAILED', 'event': 'END', 'billSeconds': 0}, origen='timeout')
+    llamada.refresh_from_db()
+    return llamada
+
+
 def cerrar_llamadas_colgadas():
     """Llamadas que quedaron 'vivas' porque nunca llegó el evento de fin (se cierran por timeout)."""
+    # Click2Dial aceptado pero Anura no avisó nada en 3 minutos: el softphone no sonó o los eventos no llegan
+    for llamada in Llamada.objects.filter(estado=Llamada.ESTADO_DISCANDO,
+                                          inicio_at__lt=timezone.now() - timedelta(minutes=3)):
+        if sin_eventos_de_anura(llamada):
+            descartar_llamada(llamada, motivo='sin eventos en 3 minutos')
     limite = timezone.now() - timedelta(hours=2)
     colgadas = Llamada.objects.filter(estado__in=Llamada.ESTADOS_VIVOS, inicio_at__lt=limite)
     n = 0
@@ -644,7 +672,7 @@ def cerrar_llamadas_colgadas():
         if not llamada.call_id and not llamada.anura_uuid:
             llamada.anura_uuid = f'local-{llamada.pk}'
             Llamada.objects.filter(pk=llamada.pk).update(anura_uuid=llamada.anura_uuid)
-        procesar_evento_llamada({'callId': llamada.call_id or '', 'uuid': llamada.anura_uuid,
+        procesar_evento_llamada({'callId': llamada.call_id or '', 'uuid': llamada.anura_uuid, 'custom1': f'crm-{llamada.pk}',
                                  'status': 'FAILED', 'event': 'END', 'billSeconds': 0}, origen='timeout')
         n += 1
     # Contactos de campaña "en curso" sin llamada viva (p.ej. falló el dial sin respuesta)

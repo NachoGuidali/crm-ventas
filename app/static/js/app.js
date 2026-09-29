@@ -169,6 +169,8 @@
     w.querySelector('.quien').innerHTML = ll.url ? `<a href="${esc(ll.url)}">${esc(ll.nombre)}</a>` : esc(ll.nombre);
     w.querySelector('.cortar').style.display = ll.viva && ll.puede_cortar ? '' : 'none';
     w.querySelector('.hint').style.display = ll.viva && !ll.puede_cortar ? '' : 'none';
+    // Si Anura no avisó nada a los 20 s, se ofrece descartar el aviso (se cierra solo a los 3 min)
+    w.querySelector('.descartar').style.display = ll.viva && ll.sin_aviso && !ll.puede_cortar && ll.segundos >= 20 ? '' : 'none';
     const ir = w.querySelector('.ir-anura');
     ir.style.display = ll.viva && ll.anura_url ? '' : 'none';
     ir.dataset.url = ll.anura_url || '';
@@ -215,6 +217,11 @@
       clearTimeout(pulsoTimer); pulsoTimer = setTimeout(pulso, 1500);
     });
     w.querySelector('.cerrar').addEventListener('click', () => { w.className = ''; });
+    w.querySelector('.descartar').addEventListener('click', async () => {
+      if (!llamadaActual || !confirm('Anura no avisó nada de esta llamada. ¿Cerrar el aviso? (queda registrada como fallida)')) return;
+      try { await api('/api/telephony/hangup/' + llamadaActual.id + '?descartar=1', {method: 'PUT'}); toast('Aviso descartado'); } catch (e) {}
+      clearTimeout(pulsoTimer); pulsoTimer = setTimeout(pulso, 500);
+    });
     // Abre Anura en una pestaña con nombre fijo: si ya se abrió desde el CRM, vuelve a esa misma pestaña.
     w.querySelector('.ir-anura').addEventListener('click', e => {
       const url = e.currentTarget.dataset.url;

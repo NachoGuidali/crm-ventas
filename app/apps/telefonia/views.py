@@ -97,7 +97,7 @@ class HangupView(LoginRequiredMixin, View):
         if llamada is None:
             return error('Llamada no encontrada', 404)
         try:
-            services.colgar(request.user, llamada)
+            services.colgar(request.user, llamada, descartar=bool(request.GET.get('descartar')))
         except services.ErrorTelefonia as e:
             return error(str(e))
         return ok()

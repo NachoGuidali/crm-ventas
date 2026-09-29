@@ -280,3 +280,40 @@ class SoloEventosPropiosTests(AnuraBase):
         self.webhook({'callId': 'R1', 'direction': 'IN', 'status': 'NOANSWER', 'calling': '1155552222',
                       'called': '47001111', 'billSeconds': 0})
         self.assertTrue(Contacto.objects.filter(telefono='+5491155552222').exists())
+
+
+class LlamadaSinAvisoTests(AnuraBase):
+    """Click2Dial aceptado pero Anura nunca manda eventos: el aviso no puede quedar trabado en 'Discando'."""
+
+    def setUp(self):
+        super().setUp()
+        ConfigAnura.objects.filter(pk=1).update(modo_demo=False, click2dial_token='tok', solo_eventos_propios=True)
+        from django.core.cache import cache
+        cache.clear()
+        op = ingresar_prospecto({'telefono': '1155557777', 'nombre': 'Rita'}, self.embudo, 'manual').oportunidad
+        self.cl = Client()
+        self.cl.force_login(self.agente)
+        resp = mock.Mock(status_code=200, text='{"id": 55}')
+        resp.json.return_value = {'id': 55}
+        with mock.patch('apps.telefonia.client.requests.post', return_value=resp):
+            self.cl.post('/api/telephony/dial', json.dumps({'oportunidadId': op.pk}), content_type='application/json')
+        self.llamada = Llamada.objects.get()
+
+    def test_guarda_respuesta_y_el_agente_puede_descartar(self):
+        self.assertEqual(self.llamada.payload['click2dial'], {'id': 55})
+        d = self.cl.get('/api/telephony/estado/').json()['llamada']
+        self.assertTrue(d['sin_aviso'])
+        r = self.cl.put(f'/api/telephony/hangup/{self.llamada.pk}?descartar=1')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.llamada.refresh_from_db()
+        self.assertEqual(self.llamada.estado, Llamada.ESTADO_FALLIDA)
+        self.assertIsNone(self.cl.get('/api/telephony/estado/').json()['llamada'])
+
+    def test_se_cierra_sola_a_los_3_minutos(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .services import cerrar_llamadas_colgadas
+        Llamada.objects.filter(pk=self.llamada.pk).update(inicio_at=timezone.now() - timedelta(minutes=4))
+        cerrar_llamadas_colgadas()
+        self.llamada.refresh_from_db()
+        self.assertFalse(self.llamada.viva)
