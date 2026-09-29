@@ -3,8 +3,8 @@
 Guía de referencia para conectar un CRM con Anura. Está escrita a partir de la documentación pública de Anura
 y de lo que confirmó su soporte (septiembre 2026). Sirve para este proyecto y como base para otros.
 
-> **Estado:** implementado y probado en modo demostración y con tests automáticos que simulan los eventos
-> reales de Anura. **Falta la primera prueba contra el Anura real** (ver "Pendiente de confirmar").
+> **Estado:** probado contra Anura real (29/09/2026): Click2Dial + eventos START/TALK/END funcionando (en curso,
+> atendida con duración, fin). Pendiente: probar entrantes reales y grabaciones.
 
 ---
 
@@ -83,6 +83,9 @@ Documentación: <https://kb.anura.com.ar/es/articles/2579270-webhooks> ·
 variables: <https://kb.anura.com.ar/es/articles/2579414-variables-eventos-templetizados>
 
 ### Dónde y cómo se configuran
+
+> **Ojo:** la plantilla y los triggers tienen un tilde **Activo**. En la primera prueba real no llegaba nada porque
+> estaban desactivados: Click2Dial respondía 200 pero no había ningún POST en el log del CRM.
 
 Son **dos pasos** (requiere rol de configuración):
 
@@ -214,6 +217,9 @@ a qué teléfono suena la llamada lo decide la central de Anura.
 
 - Tiene que tener su teléfono de Anura conectado (softphone web o de escritorio, app o teléfono IP).
 - Toca **Llamar** en la ficha / tablero / lista / inbox / Mi día → suena su teléfono → atiende → se disca al cliente.
+  **Recomendado:** en Anura, *Configuración → Cuentas → (cuenta del agente) → Avanzado*, activar **Auto answer** y
+  **Activar Click 2 Dial**: la terminal atiende sola las llamadas que origina Click2Dial, así el agente toca Llamar y
+  ya queda sonando el cliente en su auricular (clave para el discador). No afecta a las entrantes.
 - Un **aviso flotante** muestra con quién habla y el tiempo, aunque cambie de pantalla, con el botón **Ir a Anura**.
 - **Corta desde su teléfono** (o corta el cliente); el aviso se cierra solo al llegar el evento END.
 - En entrantes por cola, el aviso con la ficha aparece **al atender** (mientras suena, Anura no sabe quién atenderá).
@@ -241,7 +247,7 @@ a qué teléfono suena la llamada lo decide la central de Anura.
   no reconoce el valor decide por los segundos facturables).
 - Si el link de `{{ audio_file_mp3 }}` se descarga sin credenciales (el CRM lo intenta sin y, si es rechazado, con las
   de la API de tenant si están cargadas).
-- Si la respuesta de Click2Dial trae algún id (no es necesario gracias a `custom1`).
+- ~~Si la respuesta de Click2Dial trae algún id~~: responde 200 con cuerpo vacío (no hace falta: se usa `custom1`).
 - Si el WebPhone de Anura puede integrarse en una web propia (permitiría atender y cortar desde el CRM).
 
 ---
