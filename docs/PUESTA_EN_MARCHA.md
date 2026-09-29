@@ -101,7 +101,9 @@ y `docker compose up -d` (recrea los contenedores con el `.env` nuevo).
 
 ### 6.2 Cargar los Eventos en Anura
 
-*Configuración → Eventos* → crear tres eventos iguales salvo el trigger: `START`, `TALK` y `END`, dirección `BOTH`.
+Dos pasos:
+
+**1. Plantilla** — *Configuración → Eventos → Agregar* (una sola; petición + cuerpo):
 
 | Campo | Valor |
 |---|---|
@@ -110,10 +112,13 @@ y `docker compose up -d` (recrea los contenedores con el `.env` nuevo).
 | Ruta | `api/integrations/anura/webhook` |
 | Método / Content-Type | POST / JSON |
 | Autorización | Bearer `<token del CRM>` (se copia en el CRM: *Telefonía Anura*) |
-| Cuerpo | la plantilla que muestra el CRM en *Telefonía Anura* (botón copiar) — también en `docs/INTEGRACION_ANURA.md` §4 |
+| Cuerpo | la plantilla que muestra el CRM en *Telefonía Anura* (clic para copiar) |
 
-**Asignar los eventos SOLO a la cuenta/interno de prueba** (y a la cola o DID de prueba, si hay). Así Anura no manda
-al CRM las llamadas del resto de la empresa.
+**2. Triggers** — *Configuración → Cuenta* → la cuenta del **interno de prueba** → **Modificar** → pestaña **Eventos**
+→ **Agregar** tres veces: `START`, `TALK` y `END`, dirección `BOTH`, plantilla la del paso 1, Activo tildado.
+
+**Cargar los triggers SOLO en la cuenta del interno de prueba** (y en la cola o DID de prueba, si hay). Así Anura no
+manda al CRM las llamadas del resto de la empresa.
 
 ### 6.3 Configurar el CRM
 
@@ -147,7 +152,7 @@ Si en los eventos Anura lo informa con otro nombre (usuario SIP, nombre de cuent
 nada, el evento no está asignado a la cuenta o la URL/token está mal (nginx: `/var/log/nginx/access.log`). Si el log
 dice "Evento de Anura ignorado", el interno no coincide: ver qué identificador trae el evento y cargarlo como alias.
 
-**Al terminar las pruebas en la cuenta del otro cliente:** borrar los tres eventos y revocar el token de Click2Dial.
+**Al terminar las pruebas en la cuenta del otro cliente:** borrar los triggers de la cuenta, la plantilla y revocar el token de Click2Dial.
 
 ---
 

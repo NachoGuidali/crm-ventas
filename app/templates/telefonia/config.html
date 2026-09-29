@@ -38,7 +38,7 @@
   </div></form>
 
   <div class="card mt-3"><div class="card-header">Eventos de llamadas (WebHook de Anura)</div><div class="card-body small">
-    <p class="mb-2">En el panel de Anura: <b>Configuración → Eventos</b>. Crear <b>un evento por trigger</b> (START, TALK y END), con dirección <b>BOTH</b>, y asignarlo a las cuentas de los agentes (y a las cuentas o colas que reciben las entrantes). En el request:</p>
+    <p class="mb-2">Dos pasos en el panel de Anura. <b>1)</b> <b>Configuración → Eventos → Agregar</b>: una plantilla con esta petición y el cuerpo de abajo. <b>2)</b> <b>Configuración → Cuenta</b> → cada cuenta de agente (y la que recibe entrantes / cola) → <b>Modificar → pestaña Eventos → Agregar</b> tres veces: START, TALK y END, dirección <b>BOTH</b>, con esa plantilla. Petición:</p>
     <table class="table table-sm mb-2"><tbody>
       <tr><td class="muted">Protocolo / Puerto</td><td>{% if webhook_https %}HTTPS / 443{% else %}HTTP / 80{% endif %}</td></tr>
       <tr><td class="muted">Host</td><td><code class="copiable">{{ webhook_host }}</code></td></tr>
@@ -46,7 +46,7 @@
       <tr><td class="muted">Método / Content-Type</td><td>POST / application/json</td></tr>
       <tr><td class="muted">Autorización</td><td>Bearer <code class="copiable" data-valor="{{ config.webhook_token }}">{{ config.webhook_token|slice:":8" }}…</code> <span class="muted">(clic para copiar)</span></td></tr>
     </tbody></table>
-    <p class="mb-1">Cuerpo (template), igual en los tres eventos:</p>
+    <p class="mb-1">Cuerpo de la plantilla:</p>
     <pre class="copiable p-2 rounded mb-2" style="background:var(--bg3);font-size:11.5px;white-space:pre-wrap" title="Clic para copiar">{{ plantilla_webhook }}</pre>
     <p class="muted mb-1">Si prefieren no usar el header de autorización, sirve la URL con el token incluido:</p>
     <code class="copiable d-block mb-2">{{ webhook_spec_url }}</code>

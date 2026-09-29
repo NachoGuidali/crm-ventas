@@ -84,15 +84,9 @@ variables: <https://kb.anura.com.ar/es/articles/2579414-variables-eventos-temple
 
 ### Dónde y cómo se configuran
 
-Panel de Anura → **Configuración → Eventos** (requiere rol de configuración). Crear **tres eventos**, uno por trigger:
+Son **dos pasos** (requiere rol de configuración):
 
-| Evento | Trigger | Dirección | Para qué |
-|---|---|---|---|
-| CRM – inicio | `START` | `BOTH` | La llamada empieza a sonar (aviso en pantalla si ya se sabe el agente) |
-| CRM – atendida | `TALK` | `BOTH` | Alguien atendió: define quién es el dueño de la llamada |
-| CRM – fin | `END` | `BOTH` | Duración, resultado, grabación; dispara tareas y avisos |
-
-En cada evento, el *request*:
+**1. Plantilla (una sola):** *Configuración → Eventos → Agregar*. Ahí va la **petición** y el **cuerpo**:
 
 | Campo | Valor |
 |---|---|
@@ -102,13 +96,25 @@ En cada evento, el *request*:
 | Método | POST |
 | Content-Type | JSON |
 | Autorización | Bearer `<token del CRM>` (se ve y copia en *Telefonía Anura*) |
+| Cuerpo | la plantilla de abajo |
 
 Si no se quiere usar el header, sirve la ruta con el token: `api/integrations/anura/webhook?token=<token del CRM>`.
 
-**Importante:** los eventos se **asignan a las cuentas** que corresponda (las de los agentes y las que reciben las
-entrantes / colas). Un evento que no está asignado a una cuenta no se dispara para ella.
+**2. Triggers, en cada cuenta:** *Configuración → Cuenta* → elegir la cuenta (interno del agente, o la que recibe las
+entrantes / cola) → **Modificar** → pestaña **Eventos** → **Agregar**, tres veces, todas con la misma plantilla:
 
-### Cuerpo (template) — igual en los tres eventos
+| Nombre | Evento | Dirección | Plantilla | Para qué |
+|---|---|---|---|---|
+| CRM inicio | `START` | `BOTH` | la del paso 1 | La llamada empieza a sonar (aviso en pantalla si ya se sabe el agente) |
+| CRM atendida | `TALK` | `BOTH` | la del paso 1 | Alguien atendió: define quién es el dueño de la llamada |
+| CRM fin | `END` | `BOTH` | la del paso 1 | Duración, resultado, grabación; dispara tareas y avisos |
+
+Etiquetas y Filtros vacíos, Activo tildado. Una cuenta sin estos triggers no le avisa nada al CRM (sirve para limitar
+qué llamadas llegan, por ejemplo en una cuenta compartida con otras áreas).
+
+Fuente: <https://kb.anura.com.ar/es/articles/2579270-webhooks>
+
+### Cuerpo de la plantilla
 
 ```json
 {
@@ -218,7 +224,7 @@ a qué teléfono suena la llamada lo decide la central de Anura.
 
 1. Cargar token y verificar (*Verificar token* → "Token válido").
 2. Cargar internos (y alias) de 1–2 agentes; que tengan el softphone abierto.
-3. Crear los tres eventos en Anura y asignarlos a esas cuentas y a la cola/DID de prueba.
+3. Crear la plantilla en Anura y cargar los tres triggers en esas cuentas y en la cola/DID de prueba.
 4. **Saliente desde el CRM** a un celular propio: suena el softphone, se disca, se habla, se corta → en la ficha:
    llamada atendida con duración, intento registrado, grabación.
 5. **Saliente desde el softphone** a un número que no está en el CRM → se crea la tarjeta asignada a ese agente.
