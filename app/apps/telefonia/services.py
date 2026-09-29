@@ -345,6 +345,9 @@ def _texto_llamada(llamada):
     sentido = 'entrante' if llamada.direccion == Llamada.DIR_ENTRANTE else 'saliente'
     if llamada.viva:
         return f'Llamada {sentido} en curso' + (f' — {llamada.agente.display_name}' if llamada.agente_id else '')
+    if (llamada.payload or {}).get('sinEventos'):
+        return (f'Llamada {sentido}: sin confirmación de Anura (no llegó el aviso de la central; no se sabe si se habló)'
+                + (f' · {llamada.agente.display_name}' if llamada.agente_id else ''))
     texto = f'Llamada {sentido}: {llamada.get_estado_display().lower()}'
     if llamada.duracion_seg:
         texto += f' · {duracion(llamada.duracion_seg)}'
@@ -372,6 +375,11 @@ def _al_finalizar(llamada, config):
     from apps.crm import services as crm
     from apps.users.services import notificar, notificar_varios, supervisores_de
     op = llamada.oportunidad
+    if (llamada.payload or {}).get('sinEventos'):
+        # Cerrada por el CRM sin ningún aviso de Anura: no se sabe qué pasó, no cuenta como intento ni mueve la etapa
+        if llamada.campania_contacto_id:
+            _actualizar_contacto_campania(llamada)
+        return
     if op is not None:
         op.refresh_from_db()
         crm.tocar(op)
@@ -653,7 +661,7 @@ def descartar_llamada(llamada, motivo):
     logger.warning('Llamada #%s cerrada sin eventos de Anura (%s). Respuesta de Click2Dial: %s', llamada.pk, motivo,
                    str((llamada.payload or {}).get('click2dial'))[:300])
     procesar_evento_llamada({'callId': llamada.call_id or '', 'uuid': llamada.anura_uuid, 'custom1': f'crm-{llamada.pk}',
-                             'status': 'FAILED', 'event': 'END', 'billSeconds': 0}, origen='timeout')
+                             'status': 'FAILED', 'event': 'END', 'billSeconds': 0, 'sinEventos': True}, origen='timeout')
     llamada.refresh_from_db()
     return llamada
 

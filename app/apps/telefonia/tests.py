@@ -317,3 +317,7 @@ class LlamadaSinAvisoTests(AnuraBase):
         cerrar_llamadas_colgadas()
         self.llamada.refresh_from_db()
         self.assertFalse(self.llamada.viva)
+        op = self.llamada.oportunidad
+        op.refresh_from_db()
+        self.assertEqual((op.intentos_contacto, op.etapa.orden), (0, 1))  # no cuenta como intento ni avanza
+        self.assertTrue(op.actividades.filter(texto__contains='sin confirmación de Anura').exists())
