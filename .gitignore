@@ -1,0 +1,9 @@
+.env
+.env.dev
+.venv/
+__pycache__/
+*.pyc
+app/media/
+app/staticfiles/
+app/logs/*.log
+.env.produccion

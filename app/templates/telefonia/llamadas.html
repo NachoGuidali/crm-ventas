@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Llamadas{% endblock %}
+{% block content %}
+<div class="page-head"><h1><i class="bi bi-telephone"></i> Llamadas <span class="sub">{{ page.paginator.count }}</span></h1></div>
+<form class="toolbar mb-3" method="get">
+  <input type="search" name="q" value="{{ filtros.q }}" class="form-control form-control-sm" placeholder="Nombre o número">
+  {% if user.ve_todo %}<select name="agente" class="form-select form-select-sm"><option value="">Agente</option>{% for a in agentes %}<option value="{{ a.pk }}" {% if filtros.agente == a.pk|stringformat:'s' %}selected{% endif %}>{{ a.display_name }}</option>{% endfor %}</select>{% endif %}
+  <select name="direccion" class="form-select form-select-sm"><option value="">Entrantes y salientes</option><option value="IN" {% if filtros.direccion == 'IN' %}selected{% endif %}>Entrantes</option><option value="OUT" {% if filtros.direccion == 'OUT' %}selected{% endif %}>Salientes</option></select>
+  <select name="estado" class="form-select form-select-sm"><option value="">Estado</option>{% for k, v in estados %}<option value="{{ k }}" {% if filtros.estado == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+  <input type="date" name="desde" value="{{ filtros.desde }}" class="form-control form-control-sm"><input type="date" name="hasta" value="{{ filtros.hasta }}" class="form-control form-control-sm">
+  <button class="btn btn-outline-secondary btn-sm">Filtrar</button>
+</form>
+<div class="card">{% include "telefonia/_tabla_llamadas.html" with llamadas=page mostrar_contacto=True %}</div>
+{% include "_paginacion.html" %}
+{% endblock %}

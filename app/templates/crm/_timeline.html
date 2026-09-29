@@ -1,0 +1,12 @@
+<form data-ajax data-reset action="{{ nota_url }}" class="mb-3" id="formNota">
+  <textarea name="texto" rows="2" class="form-control mb-2" placeholder="Escribí una nota… (usá @usuario para mencionar a alguien)" required></textarea>
+  <div class="text-end"><button class="btn btn-sm btn-outline-warning"><i class="bi bi-sticky"></i> Guardar nota</button></div>
+</form>
+<div class="timeline" id="timeline">
+  {% for a in actividades %}{% include "crm/_actividad.html" %}{% empty %}<div class="muted small">Sin actividad todavía.</div>{% endfor %}
+</div>
+<script>
+document.getElementById('formNota').addEventListener('crm:ok', e => {
+  if (e.detail.html) document.getElementById('timeline').insertAdjacentHTML('afterbegin', e.detail.html);
+});
+</script>
