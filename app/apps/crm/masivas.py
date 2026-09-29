@@ -10,7 +10,7 @@ import logging
 from django.core.exceptions import PermissionDenied
 
 from . import services as crm
-from .models import Etapa, Etiqueta, Oportunidad, Tipificacion
+from .models import Actividad, Etapa, Etiqueta, Oportunidad, Tipificacion
 
 logger = logging.getLogger('apps.crm')
 
@@ -132,13 +132,18 @@ def ejecutar(user, accion, ids, datos):
         hechos = sum(1 for op in ops if crm.reanudar(op, user))
     elif accion == 'etiqueta':
         etiqueta = Etiqueta.objects.get(pk=datos['destino_etiqueta'])
-        etiqueta.contactos.add(*{op.contacto_id for op in ops})
+        ya = set(etiqueta.contactos.filter(pk__in={op.contacto_id for op in ops}).values_list('pk', flat=True))
+        nuevos = {op.contacto_id: op for op in ops if op.contacto_id not in ya}
+        etiqueta.contactos.add(*nuevos)
+        Actividad.objects.bulk_create([Actividad(contacto_id=cid, oportunidad=op, tipo=Actividad.TIPO_CAMBIO, usuario=user,
+                                                 texto=f'Etiqueta agregada: {etiqueta}')
+                                       for cid, op in nuevos.items()], batch_size=500)
         hechos = len(ops)
     elif accion == 'campania':
         from apps.telefonia.models import CampaniaDiscado
         from apps.telefonia.services import cargar_en_campania
         campania = CampaniaDiscado.objects.get(pk=datos['campania'])
-        hechos, omitidos = cargar_en_campania(campania, Oportunidad.objects.filter(pk__in=[o.pk for o in ops]))
+        hechos, omitidos = cargar_en_campania(campania, Oportunidad.objects.filter(pk__in=[o.pk for o in ops]), usuario=user)
         if omitidos:
             errores.append(f'{omitidos} omitidos (ya estaban cargados, sin teléfono o "no contactar")')
     elif accion == 'eliminar':

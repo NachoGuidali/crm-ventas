@@ -512,7 +512,7 @@ def colgar(user, llamada):
 # Discador progresivo
 # ═══════════════════════════════════════════════════════════════════════════
 
-def cargar_en_campania(campania, oportunidades):
+def cargar_en_campania(campania, oportunidades, usuario=None):
     """Agrega oportunidades a la campaña (sin duplicar teléfonos, sin 'no contactar')."""
     existentes = set(campania.contactos.values_list('telefono', flat=True))
     nuevos = []
@@ -525,6 +525,10 @@ def cargar_en_campania(campania, oportunidades):
         existentes.add(c.telefono)
         nuevos.append(CampaniaContacto(campania=campania, contacto=c, oportunidad=op, telefono=c.telefono))
     CampaniaContacto.objects.bulk_create(nuevos, batch_size=500, ignore_conflicts=True)
+    from apps.crm.models import Actividad
+    Actividad.objects.bulk_create([Actividad(contacto=n.contacto, oportunidad=n.oportunidad, tipo=Actividad.TIPO_SISTEMA,
+                                             usuario=usuario, texto=f'Cargado al discador: campaña "{campania}"')
+                                   for n in nuevos], batch_size=500)
     return len(nuevos), omitidos
 
 

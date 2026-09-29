@@ -46,6 +46,8 @@ class LoginView(View):
         if form.is_valid():
             services.limpiar_login_fallido(username, ip)
             login(request, form.get_user())
+            from core import presencia
+            presencia.marcar(request.user)
             destino = request.GET.get('next', '')
             if not url_has_allowed_host_and_scheme(destino, {request.get_host()}, request.is_secure()):
                 destino = ''
@@ -57,6 +59,9 @@ class LoginView(View):
 
 class LogoutView(View):
     def post(self, request):
+        from core import presencia
+        if request.user.is_authenticated:
+            presencia.desconectar(request.user)
         logout(request)
         return redirect('users:login')
 

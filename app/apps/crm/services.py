@@ -291,52 +291,113 @@ def tocar(op, momento=None):
 # Asignación automática
 # ═══════════════════════════════════════════════════════════════════════════
 
-def elegir_agente(embudo: Embudo, excluir=()):
-    """Elige el próximo agente según la regla del embudo. Debe llamarse dentro de una transacción."""
-    candidatos = list(embudo.agentes.filter(is_active=True, disponible=True)
-                      .exclude(pk__in=[u.pk for u in excluir]).order_by('pk'))
+def _candidatos(agentes_qs, entre, excluir=(), vacio_si_nadie_conectado=True):
+    """Agentes activos y disponibles; si se reparte entre conectados, solo los que tienen el CRM abierto."""
+    from core import presencia
+    base = list(agentes_qs.filter(is_active=True, disponible=True).exclude(pk__in=[u.pk for u in excluir]).order_by('pk'))
+    if entre != Embudo.ENTRE_CONECTADOS or not base:
+        return base
+    online = presencia.conectados(u.pk for u in base)
+    en_linea = [u for u in base if u.pk in online]
+    return en_linea if en_linea or vacio_si_nadie_conectado else base
+
+
+def _elegir(candidatos, modo, ultimo_id):
     if not candidatos:
         return None
-    if embudo.modo_asignacion == Embudo.ASIG_MENOR_CARGA:
+    if modo == Embudo.ASIG_MENOR_CARGA:
         cargas = dict(
             Oportunidad.objects.filter(agente__in=candidatos, estado=Oportunidad.ESTADO_ABIERTA)
             .values_list('agente').annotate(n=Count('pk')).values_list('agente', 'n')
         )
         return min(candidatos, key=lambda u: (cargas.get(u.pk, 0), u.pk))
     # Round robin: el siguiente al último asignado (por pk), dando la vuelta.
-    ultimo = embudo.ultimo_asignado_id
-    if ultimo:
+    if ultimo_id:
         for u in candidatos:
-            if u.pk > ultimo:
+            if u.pk > ultimo_id:
                 return u
     return candidatos[0]
 
 
+def elegir_agente(embudo: Embudo, excluir=()):
+    """Elige el próximo agente según la regla general del embudo. Debe llamarse dentro de una transacción."""
+    candidatos = _candidatos(embudo.agentes.all(), embudo.asignar_entre, excluir,
+                             vacio_si_nadie_conectado=embudo.sin_conectados == Embudo.SIN_CONECTADOS_ENCOLAR)
+    return _elegir(candidatos, embudo.modo_asignacion, embudo.ultimo_asignado_id)
+
+
+def regla_para(op: Oportunidad):
+    """Primera regla de asignación activa del embudo que coincide con el origen del lead (o None)."""
+    from .models import ReglaAsignacion
+    for regla in ReglaAsignacion.objects.filter(embudo_id=op.embudo_id, activa=True).prefetch_related('pautas'):
+        if regla.coincide(op):
+            return regla
+    return None
+
+
+def _elegir_por_regla(regla, embudo):
+    """(agente, seguir_con_embudo). Debe llamarse dentro de una transacción con la regla bloqueada."""
+    entre = embudo.asignar_entre if regla.asignar_entre == regla.ENTRE_EMBUDO else regla.asignar_entre
+    candidatos = _candidatos(regla.agentes.all(), entre,
+                             vacio_si_nadie_conectado=regla.si_no_hay != regla.SI_NO_HAY_TODOS)
+    modo = embudo.modo_asignacion if embudo.modo_asignacion != Embudo.ASIG_MANUAL else Embudo.ASIG_ROUND_ROBIN
+    agente = _elegir(candidatos, modo, regla.ultimo_asignado_id)
+    return agente, agente is None and regla.si_no_hay == regla.SI_NO_HAY_EMBUDO
+
+
+def _dejar_en_cola(op, motivo):
+    Oportunidad.objects.filter(pk=op.pk).update(pendiente_asignacion=True)
+    op.pendiente_asignacion = True
+    logger.info('Oportunidad #%s queda en cola de asignación: %s', op.pk, motivo)
+
+
 def asignar_oportunidad(op: Oportunidad, forzar_horario=False):
     """
-    Asigna la oportunidad según el embudo. Bloquea la fila del embudo para que dos
-    ingresos simultáneos no le den el mismo turno al mismo agente.
+    Asigna la oportunidad: primero las reglas por origen del embudo, después su regla general.
+    Bloquea la fila del embudo (o de la regla) para que dos ingresos simultáneos no le den el mismo turno
+    al mismo agente.
     """
+    from .models import ReglaAsignacion
     if op.agente_id:
         return op.agente
     embudo = op.embudo
-    if embudo.modo_asignacion == Embudo.ASIG_MANUAL:
+    regla = regla_para(op)
+    if regla and regla.accion == ReglaAsignacion.ACCION_SIN_ASIGNAR:
+        if op.pendiente_asignacion:
+            Oportunidad.objects.filter(pk=op.pk).update(pendiente_asignacion=False)
+            op.pendiente_asignacion = False
+        if not op.actividades.filter(tipo=Actividad.TIPO_ASIGNACION, datos__regla=regla.pk).exists():
+            Actividad.objects.create(contacto_id=op.contacto_id, oportunidad=op, tipo=Actividad.TIPO_ASIGNACION,
+                                     datos={'regla': regla.pk},
+                                     texto=f'Queda sin asignar por la regla "{regla}" (asignación manual).')
+        return None
+    if regla is None and embudo.modo_asignacion == Embudo.ASIG_MANUAL:
         return None
     if not forzar_horario and not embudo.en_horario() and embudo.fuera_de_horario == Embudo.FUERA_HORARIO_ENCOLAR:
-        Oportunidad.objects.filter(pk=op.pk).update(pendiente_asignacion=True)
-        op.pendiente_asignacion = True
+        _dejar_en_cola(op, 'fuera de horario')
         return None
 
+    texto = None
     with transaction.atomic():
-        embudo_lock = Embudo.objects.select_for_update().get(pk=embudo.pk)
-        agente = elegir_agente(embudo_lock)
+        agente = None
+        if regla:
+            regla_lock = ReglaAsignacion.objects.select_for_update().get(pk=regla.pk)
+            agente, seguir = _elegir_por_regla(regla_lock, embudo)
+            if agente:
+                regla_lock.ultimo_asignado = agente
+                regla_lock.save(update_fields=['ultimo_asignado'])
+                texto = f'Asignada a {agente.display_name} (automática · regla "{regla}")'
+            elif not seguir or embudo.modo_asignacion == Embudo.ASIG_MANUAL:
+                _dejar_en_cola(op, f'regla "{regla}" sin agentes que puedan recibir')
+                return None
         if agente is None:
-            Oportunidad.objects.filter(pk=op.pk).update(pendiente_asignacion=True)
-            op.pendiente_asignacion = True
-            logger.warning('Embudo %s sin agentes disponibles: oportunidad #%s queda en cola', embudo, op.pk)
-            return None
-        embudo_lock.ultimo_asignado = agente
-        embudo_lock.save(update_fields=['ultimo_asignado'])
+            embudo_lock = Embudo.objects.select_for_update().get(pk=embudo.pk)
+            agente = elegir_agente(embudo_lock)
+            if agente is None:
+                _dejar_en_cola(op, f'embudo {embudo} sin agentes que puedan recibir')
+                return None
+            embudo_lock.ultimo_asignado = agente
+            embudo_lock.save(update_fields=['ultimo_asignado'])
         actualizadas = Oportunidad.objects.filter(pk=op.pk, agente__isnull=True).update(
             agente=agente, asignada_at=timezone.now(), pendiente_asignacion=False,
         )
@@ -344,7 +405,7 @@ def asignar_oportunidad(op: Oportunidad, forzar_horario=False):
         op.refresh_from_db(fields=['agente'])
         return op.agente
     op.agente, op.pendiente_asignacion = agente, False
-    _post_asignacion(op, agente, usuario=None)
+    _post_asignacion(op, agente, usuario=None, texto=texto)
     return agente
 
 
@@ -689,7 +750,17 @@ def crear_tarea(usuario, asignado_a, titulo, vence_at, oportunidad=None, contact
         tipo=tipo, titulo=titulo, descripcion=descripcion, vence_at=vence_at, prioridad=prioridad,
     )
     invalidar_tareas(tarea.asignado_a)
+    if contacto:
+        responsable = asignado_a or usuario
+        para = f' · para {responsable.display_name}' if responsable and responsable != usuario else ''
+        registrar_tarea(tarea, usuario, f'Tarea agendada: {titulo}{para} · vence {timezone.localtime(vence_at):%d/%m %H:%M}')
     return tarea
+
+
+def registrar_tarea(tarea, usuario, texto):
+    if tarea.contacto_id:
+        Actividad.objects.create(contacto_id=tarea.contacto_id, oportunidad=tarea.oportunidad, tipo=Actividad.TIPO_TAREA,
+                                 usuario=usuario, texto=texto)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

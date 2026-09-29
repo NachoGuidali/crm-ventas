@@ -168,7 +168,7 @@ CELERY_TASK_ROUTES = {
 }
 CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_BEAT_SCHEDULE = {
-    'asignar-pendientes': {'task': 'crm.asignar_pendientes', 'schedule': 300},
+    'asignar-pendientes': {'task': 'crm.asignar_pendientes', 'schedule': 120},
     'reactivar-pausadas': {'task': 'crm.reactivar_pausadas', 'schedule': 300},
     'vencer-tareas': {'task': 'crm.notificar_tareas_vencidas', 'schedule': 600},
     'automatizaciones-programadas': {'task': 'automatizaciones.barrer_programadas', 'schedule': 60},

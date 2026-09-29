@@ -44,7 +44,7 @@ En local quedó levantado en **http://localhost:8010** (`admin` / `Admin12345!`)
 | Tipificaciones de Venta y No Venta obligatorias | Modal obligatorio al cerrar (desde tablero, ficha o inbox). Agrupadas por categoría. Nota obligatoria configurable (ej. *condición especial*). |
 | "Pide ser recontactado": no es pérdida definitiva | La tipificación **posterga**: pausa la oportunidad, agenda tarea de reactivación y la reactiva sola en la fecha. |
 | "Solicita no ser contactado" / "Dato erróneo" | Marcan el contacto: se bloquean mensajes automáticos y discador. |
-| 6.1 Asignación automática round robin | Por embudo: rotativa o por menor carga, entre agentes habilitados y **disponibles** (vacaciones), con **horario de atención**: fuera de horario queda en cola y se asigna al abrir. Notificación + tarea al agente. |
+| 6.1 Asignación automática round robin | Por embudo: rotativa o por menor carga, entre agentes habilitados y **disponibles** (vacaciones), con **horario de atención**: fuera de horario queda en cola y se asigna al abrir. Reparto entre **todos** o **solo los conectados** (si no hay nadie: espera y se asigna apenas alguien entra, o entre todos). **Reglas por origen** (texto del origen, pauta o canal): a un vendedor, entre algunos, o sin asignar para hacerlo a mano. Notificación + tarea al agente. |
 | 6.2 Mensajes automáticos por etapa | Bienvenida, seguimiento, confirmación y despedida por WhatsApp (plantilla o texto) y/o email; con demora, solo en horario, se omiten si el prospecto avanzó, está pausado o pidió no ser contactado. |
 | 6.3 Recordatorio por inactividad / aviso de estancados / aviso de venta | Configurable por embudo (días); avisos a supervisión agrupados, no uno por prospecto. |
 | Intentos antes de tipificar "Sin respuesta" | Contador de intentos por oportunidad; al llegar al estándar del embudo sugiere cerrar como *Sin respuesta*. |
@@ -158,7 +158,7 @@ Los datos extra de cada importación se guardan igual (`datos_extra`) y se muest
 ```bash
 cd app && DJANGO_SETTINGS_MODULE=config.settings.test python manage.py test apps
 ```
-86 tests: normalización de teléfonos, deduplicación (1000 ingresos con repetidos), asignación, cierres con
+97 tests: normalización de teléfonos, deduplicación (1000 ingresos con repetidos), asignación, cierres con
 tipificación, postergaciones, importación, webhooks de los 3 proveedores (firma de Meta, idempotencia),
 ventana de 24 h, Anura (entrantes, idempotencia, click2call unificado, discador), automatizaciones, recupero de
 contraseña, bloqueo de login, permisos, API, campos personalizados y obligatorios por etapa.

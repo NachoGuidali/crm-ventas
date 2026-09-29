@@ -38,6 +38,8 @@ urlpatterns = [
          name='tipificacion_nueva'),
     path('config/embudos/<int:embudo_pk>/tipificaciones/<int:pk>/', views.TipificacionAccionView.as_view(),
          name='tipificacion_editar'),
+    path('config/embudos/<int:embudo_pk>/reglas/nueva/', views.ReglaAsignacionView.as_view(), name='regla_nueva'),
+    path('config/embudos/<int:embudo_pk>/reglas/<int:pk>/', views.ReglaAsignacionView.as_view(), name='regla_editar'),
     path('config/etiquetas/', views.EtiquetaView.as_view(), name='etiquetas'),
     path('config/campos/', views.CampoListView.as_view(), name='campos'),
     path('config/campos/<int:pk>/', views.CampoListView.as_view(), name='campo_editar'),

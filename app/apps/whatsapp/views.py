@@ -202,6 +202,7 @@ class EnviarView(LoginRequiredMixin, View):
             linea = get_object_or_404(LineaWhatsApp.para_usuario(request.user), pk=request.POST.get('linea'))
             from apps.crm.services import oportunidad_activa_de
             op = oportunidad_activa_de(contacto)
+            nueva = not Conversacion.objects.filter(linea=linea, telefono=contacto.telefono).exists()
             conv = services.conversacion_para_contacto(contacto, linea, agente=op.agente if op else request.user)
         if not conv.linea.usable_por(request.user):
             return error('No tenés acceso a esta línea.', 403)
@@ -212,6 +213,10 @@ class EnviarView(LoginRequiredMixin, View):
             msg = self._enviar(request, conv)
         except services.ErrorEnvio as e:
             return error(str(e))
+        if not pk and nueva:
+            from apps.crm.models import Actividad
+            Actividad.objects.create(contacto=contacto, oportunidad=op, tipo=Actividad.TIPO_WHATSAPP, usuario=request.user,
+                                     texto=f'Inició el chat de WhatsApp desde la línea {conv.linea}')
         html = render_to_string('whatsapp/_mensajes.html', {'mensajes': [msg]}, request=request)
         return ok(html=html, id=msg.pk, conv=conv.pk)
 

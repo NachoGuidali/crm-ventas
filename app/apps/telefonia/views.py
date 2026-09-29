@@ -372,7 +372,7 @@ class CampaniaDetalleView(LoginRequiredMixin, View):
                 ops = ops.filter(etapa_id=request.POST['etapa'])
             if request.POST.get('sin_contacto'):
                 ops = ops.filter(contacto_efectivo_at__isnull=True)
-            n, omitidos = services.cargar_en_campania(c, ops)
+            n, omitidos = services.cargar_en_campania(c, ops, usuario=request.user)
             messages.success(request, f'{n} contactos cargados ({omitidos} omitidos: repetidos o "no contactar").')
         elif accion == 'reintentar_todos':
             n = c.contactos.filter(estado=CampaniaContacto.ESTADO_NO_CONTESTA).update(

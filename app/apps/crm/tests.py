@@ -448,3 +448,139 @@ class ListadoYAccionesMasivasTests(BaseCRM):
         self.assertEqual(Oportunidad.objects.filter(agente=self.c3).count(), 12)
         from apps.users.models import NotificacionInterna
         self.assertTrue(NotificacionInterna.objects.filter(destinatario=self.sup, titulo__startswith='Reasignar: 12').exists())
+
+
+class AsignacionConectadosYReglasTests(BaseCRM):
+    def setUp(self):
+        super().setUp()  # limpia la caché: la presencia de un test no pasa al siguiente
+        from core import presencia
+        self.presencia = presencia
+        self.a3 = User.objects.create_user('ceci', password='x', first_name='Ceci')
+
+    def ingresar(self, tel, **kw):
+        return crm.ingresar_prospecto({'telefono': tel, 'nombre': 'X'}, self.embudo, kw.pop('origen', 'web'), **kw).oportunidad
+
+    def test_solo_conectados(self):
+        Embudo.objects.filter(pk=self.embudo.pk).update(asignar_entre=Embudo.ENTRE_CONECTADOS)
+        self.embudo.refresh_from_db()
+        self.presencia.marcar(self.a2)
+        agentes = {self.ingresar(f'11400000{i:02d}').agente for i in range(4)}
+        self.assertEqual(agentes, {self.a2})
+
+    def test_nadie_conectado_espera_y_se_asigna_al_conectarse(self):
+        Embudo.objects.filter(pk=self.embudo.pk).update(asignar_entre=Embudo.ENTRE_CONECTADOS)
+        self.embudo.refresh_from_db()
+        op = self.ingresar('1140000100')
+        self.assertIsNone(op.agente)
+        self.assertTrue(op.pendiente_asignacion)
+        self.presencia.marcar(self.a1)  # al conectarse reparte los que esperaban (Celery eager en tests)
+        op.refresh_from_db()
+        self.assertEqual(op.agente, self.a1)
+
+    def test_nadie_conectado_asigna_entre_todos_si_se_eligio(self):
+        Embudo.objects.filter(pk=self.embudo.pk).update(asignar_entre=Embudo.ENTRE_CONECTADOS,
+                                                       sin_conectados=Embudo.SIN_CONECTADOS_TODOS)
+        self.embudo.refresh_from_db()
+        self.assertIn(self.ingresar('1140000200').agente, (self.a1, self.a2))
+
+    def test_todos_ignora_la_conexion(self):
+        agentes = {self.ingresar(f'11400003{i:02d}').agente for i in range(4)}
+        self.assertEqual(agentes, {self.a1, self.a2})
+
+    def test_regla_por_origen_a_un_vendedor_o_entre_varios(self):
+        from .models import ReglaAsignacion
+        r = ReglaAsignacion.objects.create(embudo=self.embudo, nombre='Instagram a Ceci', textos_origen=['instagram'])
+        r.agentes.set([self.a3])  # no está entre los agentes del embudo y recibe igual
+        for i in range(3):
+            self.assertEqual(self.ingresar(f'11400004{i:02d}', origen_pauta='Pauta Instagram - Sept').agente, self.a3)
+        self.assertIn(self.ingresar('1140000500', origen_pauta='Google').agente, (self.a1, self.a2))
+        r.agentes.set([self.a1, self.a3])
+        agentes = {self.ingresar(f'11400006{i:02d}', origen_pauta='instagram').agente for i in range(4)}
+        self.assertEqual(agentes, {self.a1, self.a3})
+        op = Oportunidad.objects.filter(origen_pauta='instagram').first()
+        self.assertTrue(op.actividades.filter(texto__contains='regla "Instagram a Ceci"').exists())
+
+    def test_regla_no_asignar(self):
+        from .models import ReglaAsignacion
+        ReglaAsignacion.objects.create(embudo=self.embudo, nombre='Referidos manual', textos_origen=['referido'],
+                                       accion=ReglaAsignacion.ACCION_SIN_ASIGNAR)
+        op = self.ingresar('1140000700', origen_pauta='Referidos')
+        self.assertIsNone(op.agente)
+        self.assertFalse(op.pendiente_asignacion)  # no la levanta el reparto de pendientes
+        self.assertTrue(op.actividades.filter(texto__contains='Queda sin asignar').exists())
+
+    def test_regla_por_canal_con_conectados_y_respaldo_del_embudo(self):
+        from .models import ReglaAsignacion
+        r = ReglaAsignacion.objects.create(embudo=self.embudo, nombre='WhatsApp a Ceci', canales=['whatsapp'],
+                                           asignar_entre=Embudo.ENTRE_CONECTADOS,
+                                           si_no_hay=ReglaAsignacion.SI_NO_HAY_EMBUDO)
+        r.agentes.set([self.a3])
+        self.assertIn(self.ingresar('1140000800', origen='whatsapp').agente, (self.a1, self.a2))  # Ceci desconectada
+        self.presencia.marcar(self.a3)
+        self.assertEqual(self.ingresar('1140000801', origen='whatsapp').agente, self.a3)
+        self.assertNotEqual(self.ingresar('1140000802', origen='web').agente, self.a3)
+
+    def test_pantalla_de_reglas(self):
+        from .models import ReglaAsignacion
+        admin = User.objects.create_user('jefa', password='x', rol=User.ROL_ADMIN)
+        self.client.force_login(admin)
+        r = self.client.post(f'/config/embudos/{self.embudo.pk}/reglas/nueva/', {
+            'nombre': 'Insta', 'activa': 'on', 'orden': 1, 'textos': 'instagram\nig', 'accion': 'agentes',
+            'agentes': [self.a3.pk], 'asignar_entre': 'embudo', 'si_no_hay': 'encolar'})
+        self.assertEqual(r.status_code, 302)
+        regla = ReglaAsignacion.objects.get()
+        self.assertEqual(regla.textos_origen, ['instagram', 'ig'])
+        r = self.client.get(f'/config/embudos/{self.embudo.pk}/')
+        self.assertContains(r, 'origen contiene &quot;instagram&quot; o &quot;ig&quot;')
+        r = self.client.post(f'/config/embudos/{self.embudo.pk}/reglas/nueva/', {
+            'nombre': 'Vacía', 'orden': 2, 'accion': 'agentes', 'asignar_entre': 'embudo', 'si_no_hay': 'encolar'})
+        self.assertContains(r, 'al menos una condición')
+
+
+class HistorialDeCambiosTests(BaseCRM):
+    def setUp(self):
+        super().setUp()
+        self.op = crm.ingresar_prospecto({'telefono': '1150000001', 'nombre': 'Laura Paz', 'email': 'l@x.com'},
+                                         self.embudo, 'web').oportunidad
+        self.client.force_login(self.op.agente)
+
+    def cambios(self):
+        act = Actividad.objects.filter(oportunidad=self.op, tipo=Actividad.TIPO_CAMBIO).latest('created_at')
+        return act, {c['campo']: (c['antes'], c['despues']) for c in act.datos['cambios']}
+
+    def test_editar_contacto_registra_campo_valor_y_quien(self):
+        from .models import CampoPersonalizado
+        CampoPersonalizado.objects.create(nombre='Obra social', tipo=CampoPersonalizado.TIPO_TEXTO)
+        c = self.op.contacto
+        r = self.client.post(f'/contactos/{c.pk}/editar/', {
+            'nombre': 'Laura Paz', 'telefono': c.telefono, 'email': 'laura@nuevo.com', 'localidad': 'Quilmes',
+            'cp__obra_social': 'OSDE', 'oportunidad': self.op.pk})
+        self.assertEqual(r.status_code, 302)
+        act, cambios = self.cambios()
+        self.assertEqual(act.usuario, self.op.agente)
+        self.assertEqual(cambios['email'], ('l@x.com', 'laura@nuevo.com'))
+        self.assertEqual(cambios['localidad'], ('—', 'Quilmes'))
+        self.assertEqual(cambios['cp:obra_social'], ('—', 'OSDE'))
+        self.assertNotIn('nombre', cambios)
+        r = self.client.get(self.op.get_absolute_url())
+        self.assertContains(r, 'laura@nuevo.com</b>')
+        self.assertContains(r, 'Cambios de datos')
+
+    def test_sin_cambios_no_registra(self):
+        c = self.op.contacto
+        self.client.post(f'/contactos/{c.pk}/editar/', {'nombre': c.nombre, 'telefono': c.telefono, 'email': c.email})
+        self.assertFalse(Actividad.objects.filter(tipo=Actividad.TIPO_CAMBIO).exists())
+
+    def test_valor_y_tareas(self):
+        import json
+        self.client.post(f'/oportunidades/{self.op.pk}/valor/', json.dumps({'valor': '15000'}), content_type='application/json')
+        _, cambios = self.cambios()
+        self.assertEqual(cambios['valor'], ('—', '15.000'))
+        self.client.post(f'/oportunidades/{self.op.pk}/tarea/', json.dumps({
+            'titulo': 'Llamar mañana', 'vence_at': (timezone.localtime() + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M'),
+            'tipo': 'llamada', 'prioridad': 'normal'}), content_type='application/json')
+        tarea = Tarea.objects.get(titulo='Llamar mañana')
+        self.client.post(f'/tareas/{tarea.pk}/cancelar/', '{}', content_type='application/json')
+        textos = list(Actividad.objects.filter(oportunidad=self.op, tipo=Actividad.TIPO_TAREA).values_list('texto', flat=True))
+        self.assertTrue(any(t.startswith('Tarea agendada: Llamar mañana') for t in textos), textos)
+        self.assertIn('Tarea cancelada: Llamar mañana', textos)

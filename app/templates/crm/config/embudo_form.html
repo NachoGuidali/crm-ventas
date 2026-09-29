@@ -18,6 +18,11 @@
   </div></div></div>
   <div class="col-lg-6"><div class="card h-100"><div class="card-header">Asignación automática</div><div class="card-body">
     <label class="form-label">Regla</label>{{ form.modo_asignacion }}
+    <div class="row g-2 mt-1">
+      <div class="col-sm-6"><label class="form-label">{{ form.asignar_entre.label }}</label>{{ form.asignar_entre }}</div>
+      <div class="col-sm-6" id="boxSinConectados"><label class="form-label">{{ form.sin_conectados.label }}</label>{{ form.sin_conectados }}</div>
+    </div>
+    <div class="form-text">"Conectado" = tiene el CRM abierto (en cualquier pestaña) y está disponible. Se desconecta a los 4 minutos de cerrarlo o al salir. Las excepciones por origen se configuran abajo, en <a href="#reglas">Reglas por origen</a>.</div>
     <label class="d-flex gap-2 mt-2 small">{{ form.crear_tarea_al_asignar }} {{ form.crear_tarea_al_asignar.label }}</label>
     <label class="d-flex gap-2 mt-2 small">{{ form.respetar_horario }} {{ form.respetar_horario.label }}</label>
     <div class="row g-2 mt-1">
@@ -28,7 +33,8 @@
     </div>
   </div></div></div>
   <div class="col-lg-6"><div class="card h-100"><div class="card-header">Agentes habilitados (reciben prospectos)</div><div class="card-body">
-    <div class="checks-grid">{% for c in form.agentes %}<label>{{ c.tag }} {{ c.choice_label }}</label>{% endfor %}</div>
+    <div class="checks-grid">{% for c in form.agentes %}<label>{{ c.tag }} {{ c.choice_label }}{% if c.data.value.value in conectados %} <span class="dot" style="background:#22C97A" title="Conectado ahora"></span>{% endif %}</label>{% endfor %}</div>
+    {% if embudo %}<div class="form-text"><span class="dot" style="background:#22C97A"></span> = conectado ahora.</div>{% endif %}
     <div class="section-title mt-3">Supervisores (avisos de ventas y estancados)</div>
     <div class="checks-grid">{% for c in form.supervisores %}<label>{{ c.tag }} {{ c.choice_label }}</label>{% endfor %}</div>
     <div class="form-text">Sin supervisores marcados, avisa a todos los usuarios con permiso de supervisión.</div>
@@ -47,6 +53,24 @@
 </form>
 
 {% if embudo %}
+<div class="card mt-3" id="reglas"><div class="card-header d-flex align-items-center">Reglas por origen (excepciones a la asignación)
+  <a href="{% url 'crm:regla_nueva' embudo.pk %}" class="btn btn-sm btn-primary ms-auto"><i class="bi bi-plus-lg"></i> Nueva regla</a></div>
+  <div class="card-body">
+    <p class="small muted mb-2">Se revisan en orden cuando entra un lead; gana la primera que coincide. Si ninguna coincide, se usa la asignación general de arriba.</p>
+    {% for r in reglas %}
+    <div class="d-flex align-items-center gap-2 py-2 border-bottom{% if not r.activa %} opacity-50{% endif %}" style="border-color:var(--border)!important">
+      <span class="chip">{{ forloop.counter }}</span>
+      <div class="flex-grow-1 small"><b>{{ r.nombre }}</b>{% if not r.activa %} <span class="chip">inactiva</span>{% endif %}
+        <div class="muted">Si {{ r.resumen_condiciones }} →
+          {% if r.accion == 'sin_asignar' %}<b>no se asigna</b> (queda para asignación manual)
+          {% else %}<b>{% for a in r.agentes.all %}{{ a.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</b>
+            ({{ r.get_asignar_entre_display|lower }}{% if r.si_no_hay == 'embudo' %}; si no pueden, regla general{% elif r.si_no_hay == 'todos' %}; si no hay conectados, igual entre ellos{% else %}; si no pueden, espera{% endif %}){% endif %}
+        </div></div>
+      <a href="{% url 'crm:regla_editar' embudo.pk r.pk %}" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+    </div>
+    {% empty %}<div class="small muted">Sin reglas: todos los leads se asignan con la regla general.</div>{% endfor %}
+  </div></div>
+
 <div class="row g-3 mt-2">
   <div class="col-lg-6" id="etapas"><div class="card"><div class="card-header">Etapas (en orden)</div><div class="card-body">
     {% for e in etapas %}
@@ -103,4 +127,14 @@
   </div></div></div>
 </div>
 {% endif %}
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  const sel = document.getElementById('id_asignar_entre'), box = document.getElementById('boxSinConectados');
+  if (!sel || !box) return;
+  const ver = () => { box.style.visibility = sel.value === 'conectados' ? '' : 'hidden'; };
+  sel.addEventListener('change', ver); ver();
+})();
+</script>
 {% endblock %}

@@ -14,11 +14,12 @@ from django.utils.dateparse import parse_datetime
 from django.views import View
 
 from apps.pautas.models import Pauta
+from core import presencia
 from core.permisos import PermisoRequeridoMixin
 from core.utils import error, json_body, ok, paginar, query_sin_page
 
-from . import services as crm
-from .forms import (CampoPersonalizadoForm, ContactoForm, EmbudoForm, EtapaForm, EtiquetaForm, ImportacionForm,
+from . import auditoria, services as crm
+from .forms import (CampoPersonalizadoForm, ReglaAsignacionForm, ContactoForm, EmbudoForm, EtapaForm, EtiquetaForm, ImportacionForm,
                     NuevaOportunidadForm, TareaForm, TipificacionForm, etapas_de, tipificaciones_de)
 from .models import (CAMPOS_FIJOS_REQUERIBLES, Actividad, CampoPersonalizado, Contacto, Embudo, Etapa, Etiqueta, ImportacionLote, Oportunidad,
                      Tarea, Tipificacion)
@@ -422,6 +423,13 @@ def contexto_chat(request, contacto, oportunidad=None):
     }
 
 
+FILTROS_ACTIVIDAD = [
+    ('', 'Todo'), ('nota', 'Notas'), ('llamada,intento', 'Llamadas'), ('whatsapp,email', 'Mensajes'),
+    ('etapa,cierre,pausa', 'Etapas'), ('cambio', 'Cambios de datos'), ('asignacion', 'Asignaciones'), ('tarea', 'Tareas'),
+    ('sistema,reingreso', 'Sistema'),
+]
+
+
 class OportunidadDetalleView(LoginRequiredMixin, View):
     def get(self, request, pk):
         op = oportunidad_visible(request, pk)
@@ -431,6 +439,7 @@ class OportunidadDetalleView(LoginRequiredMixin, View):
         ctx = {
             'op': op, 'contacto': contacto, 'etapas': etapas_de(op.embudo),
             'tipificaciones': tipificaciones_de(op.embudo), 'actividades': actividades,
+            'filtros_actividad': FILTROS_ACTIVIDAD,
             'tareas': op.tareas.filter(estado=Tarea.ESTADO_PENDIENTE).select_related('asignado_a').order_by('vence_at'),
             'otras': contacto.oportunidades.exclude(pk=op.pk).select_related('embudo', 'etapa', 'agente'),
             'llamadas': contacto.llamadas.select_related('agente').order_by('-inicio_at')[:30],
@@ -500,6 +509,7 @@ class AccionOportunidadView(LoginRequiredMixin, View):
         if not form.is_valid():
             return error(' · '.join(f'{campos[k].label}: {v[0]}' for k, v in form.errors.items()))
         contacto, cambios_c, extra = op.contacto, [], dict(op.contacto.datos_extra or {})
+        antes = {**auditoria.foto_contacto(contacto), **auditoria.foto_oportunidad(op)}
         for clave, valor in form.cleaned_data.items():
             if clave.startswith('cp:'):
                 extra[clave[3:]] = valor_para_guardar(tipos[clave], valor)
@@ -517,6 +527,8 @@ class AccionOportunidadView(LoginRequiredMixin, View):
             cambios_c.append('datos_extra')
         if cambios_c:
             contacto.save(update_fields=cambios_c + ['updated_at'])
+        auditoria.registrar_cambios(antes, {**auditoria.foto_contacto(contacto), **auditoria.foto_oportunidad(op)},
+                                    user, contacto, op, contexto='Datos completados para cambiar de etapa')
         return ok(mensaje='Datos guardados')
 
     def _pausar(self, request, op, data, user):
@@ -564,31 +576,37 @@ class AccionOportunidadView(LoginRequiredMixin, View):
         if not user.tiene_permiso('pautas'):
             return error('No tenés permiso para cambiar la pauta.', 403)
         pauta = Pauta.objects.filter(pk=data.get('pauta') or 0).first()
+        antes = auditoria.foto_oportunidad(op)
         op.pauta = pauta
         if pauta and not op.origen_pauta:
             op.origen_pauta = pauta.nombre
         op.save(update_fields=['pauta', 'origen_pauta', 'updated_at'])
-        Actividad.objects.create(contacto=op.contacto, oportunidad=op, tipo=Actividad.TIPO_SISTEMA, usuario=user,
-                                 texto=f'Pauta cambiada a: {pauta or "sin pauta"}')
+        auditoria.registrar_cambios(antes, auditoria.foto_oportunidad(op), user, op.contacto, op)
         return ok(mensaje='Pauta actualizada')
 
     def _valor(self, request, op, data, user):
         from decimal import Decimal, InvalidOperation
+        antes = auditoria.foto_oportunidad(op)
         try:
             op.valor = Decimal(str(data.get('valor'))) if data.get('valor') not in (None, '') else None
         except InvalidOperation:
             return error('Valor inválido')
         op.save(update_fields=['valor', 'updated_at'])
+        auditoria.registrar_cambios(antes, auditoria.foto_oportunidad(op), user, op.contacto, op)
         return ok(mensaje='Valor actualizado')
 
 
 class ContactoEditarView(LoginRequiredMixin, View):
     def post(self, request, pk):
         contacto = get_object_or_404(Contacto.objects.visibles_para(request.user), pk=pk)
+        antes = auditoria.foto_contacto(contacto)
         form = ContactoForm(request.POST, instance=contacto)
         destino = request.POST.get('next') or contacto.get_absolute_url()
         if form.is_valid():
             form.save()
+            contacto.refresh_from_db()
+            op = Oportunidad.objects.filter(pk=request.POST.get('oportunidad') or 0, contacto=contacto).first()
+            auditoria.registrar_cambios(antes, auditoria.foto_contacto(contacto), request.user, contacto, op)
             messages.success(request, 'Datos del contacto actualizados.')
         else:
             for campo, errs in form.errors.items():
@@ -757,6 +775,7 @@ class TareaAccionView(LoginRequiredMixin, View):
         if accion == 'cancelar':
             tarea.estado = Tarea.ESTADO_CANCELADA
             tarea.save(update_fields=['estado'])
+            crm.registrar_tarea(tarea, request.user, f'Tarea cancelada: {tarea.titulo}')
             crm.invalidar_tareas(tarea.asignado_a)
             return ok(mensaje='Tarea cancelada')
         if accion == 'posponer':
@@ -764,6 +783,8 @@ class TareaAccionView(LoginRequiredMixin, View):
             tarea.vence_at = max(tarea.vence_at, timezone.now()) + timedelta(hours=horas)
             tarea.notificada_vencida = False
             tarea.save(update_fields=['vence_at', 'notificada_vencida'])
+            crm.registrar_tarea(tarea, request.user, f'Tarea pospuesta: {tarea.titulo} → vence '
+                                                     f'{timezone.localtime(tarea.vence_at):%d/%m %H:%M}')
             crm.invalidar_tareas(tarea.asignado_a)
             return ok(mensaje='Tarea pospuesta')
         return error('Acción desconocida', 404)
@@ -919,10 +940,39 @@ class EmbudoEditarView(PermisoRequeridoMixin, View):
                 'tipificaciones': Tipificacion.objects.filter(Q(embudo=embudo) | Q(embudo__isnull=True))
                 .order_by('resultado', 'orden', 'categoria'),
                 'etapa_form': EtapaForm(), 'tip_form': TipificacionForm(),
+                'reglas': embudo.reglas_asignacion.prefetch_related('agentes', 'pautas'),
+                'conectados': presencia.conectados(embudo.agentes.values_list('pk', flat=True)),
                 'campos_requeribles': [(c, label) for c, label, *_ in CAMPOS_FIJOS_REQUERIBLES] + [
                     (f'cp:{c.slug}', f'★ {c.nombre}') for c in CampoPersonalizado.activos(embudo)],
             })
         return render(request, 'crm/config/embudo_form.html', ctx)
+
+
+class ReglaAsignacionView(PermisoRequeridoMixin, View):
+    permiso = 'embudos'
+
+    def _obtener(self, embudo_pk, pk):
+        embudo = get_object_or_404(Embudo, pk=embudo_pk)
+        return embudo, (get_object_or_404(embudo.reglas_asignacion, pk=pk) if pk else None)
+
+    def get(self, request, embudo_pk, pk=None):
+        embudo, regla = self._obtener(embudo_pk, pk)
+        inicial = None if regla else {'orden': embudo.reglas_asignacion.count() + 1}
+        form = ReglaAsignacionForm(instance=regla, embudo=embudo, initial=inicial)
+        return render(request, 'crm/config/regla_form.html', {'embudo': embudo, 'regla': regla, 'form': form})
+
+    def post(self, request, embudo_pk, pk=None):
+        embudo, regla = self._obtener(embudo_pk, pk)
+        if regla and request.POST.get('eliminar'):
+            regla.delete()
+            messages.success(request, f'Regla "{regla.nombre}" eliminada.')
+            return redirect(reverse('crm:embudo_editar', args=[embudo.pk]) + '#reglas')
+        form = ReglaAsignacionForm(request.POST, instance=regla, embudo=embudo)
+        if not form.is_valid():
+            return render(request, 'crm/config/regla_form.html', {'embudo': embudo, 'regla': regla, 'form': form})
+        regla = form.save()
+        messages.success(request, f'Regla "{regla.nombre}" guardada. Se aplica a los leads que entren desde ahora.')
+        return redirect(reverse('crm:embudo_editar', args=[embudo.pk]) + '#reglas')
 
 
 class EtapaAccionView(PermisoRequeridoMixin, View):

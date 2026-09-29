@@ -3,7 +3,8 @@ from django.db.models import Q
 
 from core.phone import normalizar_telefono
 
-from .models import CampoPersonalizado, Contacto, Embudo, Etapa, Etiqueta, Oportunidad, Tarea, Tipificacion
+from .models import (CampoPersonalizado, Contacto, Embudo, Etapa, Etiqueta, Oportunidad, ReglaAsignacion, Tarea,
+                     Tipificacion)
 
 
 class BootstrapMixin:
@@ -218,7 +219,7 @@ class EmbudoForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = Embudo
         fields = ['nombre', 'descripcion', 'color', 'activo', 'orden', 'agentes', 'supervisores', 'modo_asignacion',
-                  'respetar_horario', 'horario_desde', 'horario_hasta', 'fuera_de_horario', 'crear_tarea_al_asignar',
+                  'asignar_entre', 'sin_conectados', 'respetar_horario', 'horario_desde', 'horario_hasta', 'fuera_de_horario', 'crear_tarea_al_asignar',
                   'linea_whatsapp', 'max_intentos_sin_respuesta', 'dias_inactividad_recordatorio',
                   'dias_estancado_alerta', 'notificar_venta_supervisores', 'reingreso_perdidos']
         widgets = {
@@ -337,3 +338,45 @@ class CampoPersonalizadoForm(BootstrapMixin, forms.ModelForm):
         if not self.instance.pk and nombre in reservados:
             self.add_error('nombre', 'Ese nombre ya lo usa un campo fijo del CRM.')
         return d
+
+
+class ReglaAsignacionForm(BootstrapMixin, forms.ModelForm):
+    canales = forms.MultipleChoiceField(choices=Oportunidad.ORIGEN_CHOICES, required=False,
+                                        widget=forms.CheckboxSelectMultiple, label='Canal de ingreso')
+    textos = forms.CharField(
+        required=False, label='El origen contiene', widget=forms.Textarea(attrs={'rows': 3}),
+        help_text='Un texto por línea (ej: "instagram", "referidos"). Se busca dentro del origen / pauta / fuente del '
+                  'lead, sin distinguir mayúsculas, acentos ni guiones.',
+    )
+
+    class Meta:
+        model = ReglaAsignacion
+        fields = ['nombre', 'activa', 'orden', 'canales', 'pautas', 'accion', 'agentes', 'asignar_entre', 'si_no_hay']
+        widgets = {'pautas': forms.CheckboxSelectMultiple, 'agentes': forms.CheckboxSelectMultiple,
+                   'accion': forms.RadioSelect}
+
+    def __init__(self, *args, embudo=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.pautas.models import Pauta
+        from apps.users.models import User
+        self.embudo = embudo
+        self.fields['agentes'].queryset = User.objects.filter(is_active=True).order_by('first_name', 'username')
+        self.fields['pautas'].queryset = Pauta.objects.filter(Q(embudo=embudo) | Q(embudo__isnull=True)).order_by('nombre')
+        self.fields['textos'].initial = '\n'.join(self.instance.textos_origen or [])
+        self.fields['canales'].initial = self.instance.canales or []
+        self._estilizar()
+        self.fields['accion'].widget.attrs.pop('class', None)
+
+    def clean(self):
+        d = super().clean()
+        self.instance.textos_origen = [t.strip() for t in (d.get('textos') or '').splitlines() if t.strip()]
+        self.instance.canales = d.get('canales') or []
+        if not (self.instance.textos_origen or self.instance.canales or d.get('pautas')):
+            raise forms.ValidationError('Cargá al menos una condición (canal, pauta o texto del origen).')
+        if d.get('accion') == ReglaAsignacion.ACCION_AGENTES and not d.get('agentes'):
+            self.add_error('agentes', 'Elegí al menos un agente.')
+        return d
+
+    def save(self, commit=True):
+        self.instance.embudo = self.embudo
+        return super().save(commit)

@@ -203,7 +203,9 @@ class PulsoView(LoginRequiredMixin, View):
         from apps.telefonia.services import estado_llamada_json, llamada_activa, usuario_tiene_interno
         from apps.users.services import contar_no_leidas
         from apps.whatsapp.services import contar_no_leidos_usuario
+        from core import presencia
         user = request.user
+        presencia.marcar(user)
         data = {'notif': contar_no_leidas(user), 'tareas': contar_tareas_hoy(user),
                 'wa': contar_no_leidos_usuario(user), 'llamada': None}
         if usuario_tiene_interno(user):

@@ -39,6 +39,18 @@ class Embudo(models.Model):
         (ASIG_MENOR_CARGA, 'Al agente con menos prospectos abiertos'),
         (ASIG_MANUAL, 'Manual (la asigna un supervisor)'),
     ]
+    ENTRE_TODOS = 'todos'
+    ENTRE_CONECTADOS = 'conectados'
+    ENTRE_CHOICES = [
+        (ENTRE_TODOS, 'Todos los agentes habilitados'),
+        (ENTRE_CONECTADOS, 'Solo los agentes conectados en ese momento'),
+    ]
+    SIN_CONECTADOS_ENCOLAR = 'encolar'
+    SIN_CONECTADOS_TODOS = 'todos'
+    SIN_CONECTADOS_CHOICES = [
+        (SIN_CONECTADOS_ENCOLAR, 'Esperar y asignarlo apenas alguien se conecte'),
+        (SIN_CONECTADOS_TODOS, 'Asignarlo igual entre todos'),
+    ]
     FUERA_HORARIO_ASIGNAR = 'asignar'
     FUERA_HORARIO_ENCOLAR = 'encolar'
     FUERA_HORARIO_CHOICES = [
@@ -72,6 +84,10 @@ class Embudo(models.Model):
     modo_asignacion = models.CharField(max_length=20, choices=ASIGNACION_CHOICES, default=ASIG_ROUND_ROBIN)
     ultimo_asignado = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
                                         related_name='+', editable=False)
+    asignar_entre = models.CharField(max_length=12, choices=ENTRE_CHOICES, default=ENTRE_TODOS,
+                                     verbose_name='Repartir entre')
+    sin_conectados = models.CharField(max_length=10, choices=SIN_CONECTADOS_CHOICES, default=SIN_CONECTADOS_ENCOLAR,
+                                      verbose_name='Si no hay nadie conectado')
     respetar_horario = models.BooleanField(default=False, verbose_name='Asignar solo en horario de atención')
     horario_desde = models.TimeField(default='09:00')
     horario_hasta = models.TimeField(default='18:00')
@@ -571,17 +587,18 @@ class Actividad(models.Model):
     TIPO_CIERRE = 'cierre'
     TIPO_REINGRESO = 'reingreso'
     TIPO_SISTEMA = 'sistema'
+    TIPO_CAMBIO = 'cambio'
     TIPO_CHOICES = [
         (TIPO_NOTA, 'Nota'), (TIPO_LLAMADA, 'Llamada'), (TIPO_WHATSAPP, 'WhatsApp'), (TIPO_EMAIL, 'Email'),
         (TIPO_ETAPA, 'Cambio de etapa'), (TIPO_ASIGNACION, 'Asignación'), (TIPO_INTENTO, 'Intento de contacto'),
         (TIPO_TAREA, 'Tarea'), (TIPO_PAUSA, 'Pausa / reactivación'), (TIPO_CIERRE, 'Cierre'),
-        (TIPO_REINGRESO, 'Reingreso del dato'), (TIPO_SISTEMA, 'Sistema'),
+        (TIPO_REINGRESO, 'Reingreso del dato'), (TIPO_SISTEMA, 'Sistema'), (TIPO_CAMBIO, 'Cambio de datos'),
     ]
     ICONOS = {
         TIPO_NOTA: 'sticky', TIPO_LLAMADA: 'telephone', TIPO_WHATSAPP: 'whatsapp', TIPO_EMAIL: 'envelope',
         TIPO_ETAPA: 'arrow-right-circle', TIPO_ASIGNACION: 'person-check', TIPO_INTENTO: 'telephone-x',
         TIPO_TAREA: 'calendar-check', TIPO_PAUSA: 'pause-circle', TIPO_CIERRE: 'flag',
-        TIPO_REINGRESO: 'arrow-repeat', TIPO_SISTEMA: 'gear',
+        TIPO_REINGRESO: 'arrow-repeat', TIPO_SISTEMA: 'gear', TIPO_CAMBIO: 'pencil-square',
     }
 
     contacto = models.ForeignKey(Contacto, on_delete=models.CASCADE, related_name='actividades')
@@ -710,3 +727,82 @@ class ImportacionLote(models.Model):
     @property
     def porcentaje(self):
         return int(self.procesados * 100 / self.total) if self.total else 0
+
+
+class ReglaAsignacion(models.Model):
+    """
+    Excepción a la asignación del embudo según el origen del lead. Se evalúan en orden; gana la primera que
+    coincide. Sin regla que coincida, se usa la asignación general del embudo.
+    """
+    ACCION_AGENTES = 'agentes'
+    ACCION_SIN_ASIGNAR = 'sin_asignar'
+    ACCION_CHOICES = [
+        (ACCION_AGENTES, 'Asignar solo a estos agentes'),
+        (ACCION_SIN_ASIGNAR, 'No asignar (queda para asignación manual)'),
+    ]
+    ENTRE_EMBUDO = 'embudo'
+    ENTRE_CHOICES = [(ENTRE_EMBUDO, 'Como el embudo')] + Embudo.ENTRE_CHOICES
+    SI_NO_HAY_ENCOLAR = 'encolar'
+    SI_NO_HAY_TODOS = 'todos'
+    SI_NO_HAY_EMBUDO = 'embudo'
+    SI_NO_HAY_CHOICES = [
+        (SI_NO_HAY_ENCOLAR, 'Esperar a que uno de ellos se conecte / esté disponible'),
+        (SI_NO_HAY_TODOS, 'Asignar igual entre ellos aunque no estén conectados'),
+        (SI_NO_HAY_EMBUDO, 'Usar la asignación general del embudo'),
+    ]
+
+    embudo = models.ForeignKey(Embudo, on_delete=models.CASCADE, related_name='reglas_asignacion')
+    nombre = models.CharField(max_length=120)
+    orden = models.PositiveSmallIntegerField(default=0)
+    activa = models.BooleanField(default=True)
+
+    # Condiciones (todas las cargadas tienen que cumplirse; dentro de cada una alcanza con una opción)
+    canales = models.JSONField(default=list, blank=True, verbose_name='Canal de ingreso',
+                               help_text='Vacío = cualquier canal.')
+    pautas = models.ManyToManyField('pautas.Pauta', blank=True, related_name='reglas_asignacion',
+                                    help_text='Vacío = cualquier pauta.')
+    textos_origen = models.JSONField(default=list, blank=True, verbose_name='El origen contiene',
+                                     help_text='Vacío = cualquier origen.')
+
+    accion = models.CharField(max_length=12, choices=ACCION_CHOICES, default=ACCION_AGENTES)
+    agentes = models.ManyToManyField(User, blank=True, related_name='+')
+    asignar_entre = models.CharField(max_length=12, choices=ENTRE_CHOICES, default=ENTRE_EMBUDO,
+                                     verbose_name='Repartir entre')
+    si_no_hay = models.CharField(max_length=10, choices=SI_NO_HAY_CHOICES, default=SI_NO_HAY_ENCOLAR,
+                                 verbose_name='Si ninguno de ellos puede recibir')
+    ultimo_asignado = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+                                        editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['embudo', 'orden', 'pk']
+        verbose_name = 'Regla de asignación'
+        verbose_name_plural = 'Reglas de asignación'
+
+    def __str__(self):
+        return self.nombre
+
+    def coincide(self, op):
+        from apps.pautas.models import normalizar_clave
+        if self.canales and op.origen not in self.canales:
+            return False
+        if self.pk and self.pautas.exists() and not self.pautas.filter(pk=op.pauta_id or 0).exists():
+            return False
+        if self.textos_origen:
+            textos = [normalizar_clave(t) for t in (op.origen_pauta, op.fuente, op.pauta.nombre if op.pauta_id else '')]
+            textos = [t for t in textos if t]
+            if not any(normalizar_clave(b) in t for b in self.textos_origen for t in textos if normalizar_clave(b)):
+                return False
+        return True
+
+    def resumen_condiciones(self):
+        partes = []
+        if self.canales:
+            nombres = dict(Oportunidad.ORIGEN_CHOICES)
+            partes.append('canal ' + ' o '.join(str(nombres.get(c, c)) for c in self.canales))
+        pautas = list(self.pautas.all())
+        if pautas:
+            partes.append('pauta ' + ' o '.join(p.nombre for p in pautas))
+        if self.textos_origen:
+            partes.append('origen contiene ' + ' o '.join(f'"{t}"' for t in self.textos_origen))
+        return ' y '.join(partes) or 'todos los leads'

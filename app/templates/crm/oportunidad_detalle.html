@@ -139,7 +139,7 @@
           <dt>Localidad</dt><dd>{{ contacto.localidad|default:"—" }}{% if contacto.provincia %}, {{ contacto.provincia }}{% endif %}</dd>
           {% for etiqueta, valor, campo in datos_extra %}<dt>{{ etiqueta }}</dt><dd>{{ valor|default:"—" }}</dd>{% endfor %}
         </dl>
-        <form method="post" action="{% url 'crm:contacto_editar' contacto.pk %}" id="editContacto" class="collapse">{% csrf_token %}
+        <form method="post" action="{% url 'crm:contacto_editar' contacto.pk %}" id="editContacto" class="collapse">{% csrf_token %}<input type="hidden" name="oportunidad" value="{{ op.pk }}">
           <input type="hidden" name="next" value="{{ request.path }}">
           {% for f in contacto_form.campos_base %}<div class="mb-2"><label class="form-label">{{ f.label }}</label>{{ f }}</div>{% endfor %}
           {% if contacto_form.campos_personalizados_bound %}<div class="section-title mt-3">Campos personalizados</div>
