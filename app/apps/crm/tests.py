@@ -524,11 +524,16 @@ class AsignacionConectadosYReglasTests(BaseCRM):
         from .models import ReglaAsignacion
         admin = User.objects.create_user('jefa', password='x', rol=User.ROL_ADMIN)
         self.client.force_login(admin)
+        r = self.client.get(f'/config/embudos/{self.embudo.pk}/reglas/nueva/')
+        self.assertContains(r, 'type="checkbox" name="agentes" value="%d" class="form-check-input"' % self.a1.pk)
+        self.assertNotContains(r, 'type="checkbox" name="canales" value="web" class="form-control"')
         r = self.client.post(f'/config/embudos/{self.embudo.pk}/reglas/nueva/', {
             'nombre': 'Insta', 'activa': 'on', 'orden': 1, 'textos': 'instagram\nig', 'accion': 'agentes',
-            'agentes': [self.a3.pk], 'asignar_entre': 'embudo', 'si_no_hay': 'encolar'})
+            'canales': ['web', 'whatsapp'], 'agentes': [self.a3.pk, self.a1.pk], 'asignar_entre': 'embudo',
+            'si_no_hay': 'encolar'})
         self.assertEqual(r.status_code, 302)
         regla = ReglaAsignacion.objects.get()
+        self.assertEqual((sorted(regla.canales), regla.agentes.count()), (['web', 'whatsapp'], 2))
         self.assertEqual(regla.textos_origen, ['instagram', 'ig'])
         r = self.client.get(f'/config/embudos/{self.embudo.pk}/')
         self.assertContains(r, 'origen contiene &quot;instagram&quot; o &quot;ig&quot;')

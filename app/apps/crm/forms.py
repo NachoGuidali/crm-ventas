@@ -11,7 +11,7 @@ class BootstrapMixin:
     def _estilizar(self):
         for f in self.fields.values():
             w = f.widget
-            if isinstance(w, (forms.CheckboxInput,)):
+            if isinstance(w, (forms.CheckboxInput, forms.CheckboxSelectMultiple, forms.RadioSelect)):
                 w.attrs.setdefault('class', 'form-check-input')
             elif isinstance(w, (forms.Select, forms.SelectMultiple)):
                 w.attrs.setdefault('class', 'form-select')
