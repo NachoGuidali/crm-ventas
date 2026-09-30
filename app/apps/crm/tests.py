@@ -361,7 +361,7 @@ class CamposObligatoriosPorEtapaTests(BaseCRM):
 
 
 class ListadoYAccionesMasivasTests(BaseCRM):
-    """Caso pedido por Roisa: filtrar por etapa + rango de fechas, seleccionar todas y reasignar / cambiar estado."""
+    """Caso de uso real: filtrar por etapa + rango de fechas, seleccionar todas y reasignar / cambiar estado."""
 
     def setUp(self):
         super().setUp()

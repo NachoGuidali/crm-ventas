@@ -21,7 +21,7 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in env('CSRF_TRUSTED_ORIGINS', '').split
 
 # Nombre visible del sistema (logo, títulos, emails)
 CRM_NOMBRE = env('CRM_NOMBRE', 'CRM Ventas')
-CRM_SUBTITULO = env('CRM_SUBTITULO', 'Grupo Roisa')
+CRM_SUBTITULO = env('CRM_SUBTITULO', 'SupReg Solutions')
 
 INSTALLED_APPS = [
     'django.contrib.admin',

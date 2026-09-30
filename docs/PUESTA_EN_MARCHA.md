@@ -43,7 +43,7 @@ El primer arranque crea las tablas, el embudo "Doctor Flex — Prospectos" con s
 y el usuario `admin` con la contraseña `ADMIN_PASSWORD` del `.env`.
 
 **¿Datos de ejemplo para mostrar?** (300 prospectos, equipo, pautas). Solo en una instalación de demo, nunca en la
-que va a usar Roisa en serio: `docker compose exec web python manage.py datos_demo`.
+que se va a usar en serio: `docker compose exec web python manage.py datos_demo`.
 
 ## 3. nginx + HTTPS
 

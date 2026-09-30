@@ -1,4 +1,4 @@
-# CRM Ventas — Grupo Roisa / DoctoRed
+# CRM Ventas — SupReg Solutions
 
 CRM de ventas pensado para el circuito **Doctor Flex – Segmento Prospecto** (documento *Circuito_Bitrix_DoctorFlex*)
 con **WhatsApp multinúmero** (Evolution, Meta Cloud API y Twilio conviviendo) y **telefonía Anura** integrada
