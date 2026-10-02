@@ -8,6 +8,9 @@
     <div class="col-md-7"><label class="form-label">Nombre</label>{{ form.nombre }}{{ form.nombre.errors }}<div class="form-text">{{ form.nombre.help_text }}</div></div>
     <div class="col-md-5"><label class="form-label">Plataforma</label>{{ form.plataforma }}</div>
     <div class="col-12"><label class="form-label">{{ form.claves_texto.label }}</label>{{ form.claves_texto }}<div class="form-text">{{ form.claves_texto.help_text }}</div></div>
+    <div class="col-12"><div class="section-title mt-2">Chats de WhatsApp (opcional)</div></div>
+    <div class="col-md-6"><label class="form-label">{{ form.anuncios_texto.label }}</label>{{ form.anuncios_texto }}{{ form.anuncios_texto.errors }}<div class="form-text">{{ form.anuncios_texto.help_text }}</div></div>
+    <div class="col-md-6"><label class="form-label">{{ form.palabras_texto.label }}</label>{{ form.palabras_texto }}{{ form.palabras_texto.errors }}<div class="form-text">{{ form.palabras_texto.help_text }}</div></div>
     <div class="col-md-6"><label class="form-label">Embudo</label>{{ form.embudo }}</div>
     <div class="col-md-3"><label class="form-label">Inicio</label>{{ form.inicio }}</div>
     <div class="col-md-3"><label class="form-label">Fin</label>{{ form.fin }}</div>
@@ -21,6 +24,12 @@
 <div class="col-lg-5"><div class="card"><div class="card-body small muted">
   <p><b>¿Cómo se vinculan los leads?</b> Cada lead llega con un <b>origen</b>: el campo <code>origen</code> o <code>pauta</code> del formulario o la API, <code>utm_campaign</code>, la columna "Pauta" de un Excel, el anuncio de Meta si el chat vino de "clic para WhatsApp", o la pauta elegida al cargarlo a mano.</p>
   <p>Si ese texto coincide con el nombre de la pauta o con alguno de "También llega como", el lead queda en esta pauta. Si la creás después, al guardar se vinculan los leads que ya habían entrado con ese origen.</p>
+  <p><b>Chats de WhatsApp.</b> Cuando entra un chat nuevo se busca la pauta en este orden, y todo es opcional:</p>
+  <ol class="ps-3">
+    <li><b>ID del anuncio</b> (anuncios "clic para WhatsApp" de Meta; llega solo en el primer mensaje).</li>
+    <li><b>Título del anuncio</b>: si coincide con el nombre o con "También llega como".</li>
+    <li><b>Palabras clave</b> en el primer mensaje, para links de WhatsApp comunes (bio, historias, posteos). Ej.: <code>wa.me/549…?text=Hola%20quiero%20info%20%23IG-SEP</code> y la palabra clave <code>#IG-SEP</code>. Conviene un código corto y único: la persona puede editar el mensaje.</li>
+  </ol>
   <p class="mb-0">La inversión se carga desde el detalle de la pauta, por fecha (por ejemplo, un monto por mes).</p>
 </div></div></div></div>
 {% endblock %}

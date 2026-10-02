@@ -456,7 +456,13 @@ Para Marketing (permiso `pautas`): **cuánto cuesta cada lead y cada venta, por 
   - API: `origen` libre, o `pauta`, `utm_campaign`, `campaign`, `ad_name`;
   - Excel: columna de pauta, o una pauta para toda la base;
   - carga manual: selector;
-  - WhatsApp: anuncio de Meta.
+  - **WhatsApp** (cada pauta elige cómo, todo opcional), en este orden:
+    1. **ID del anuncio** de Meta ("clic para WhatsApp": llega solo en el primer mensaje, con Meta Cloud API,
+       Twilio o Evolution);
+    2. **título del anuncio**, si coincide con el nombre o con "También llega como";
+    3. **palabras clave en el primer mensaje** (un código como `#IG-SEP` o una frase del mensaje precargado de un link
+       `wa.me/…?text=…`), para links comunes en bio, historias o posteos. No distingue mayúsculas, acentos ni
+       puntuación.
 - **Pauta creada después:** al guardarla se vinculan los leads que ya habían entrado con ese origen. Los orígenes que
   no coinciden con ninguna pauta se listan con un botón para crearla.
 

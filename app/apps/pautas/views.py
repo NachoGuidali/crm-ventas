@@ -13,7 +13,7 @@ from django.views import View
 from core.permisos import PermisoRequeridoMixin
 
 from . import services
-from .models import InversionPauta, Pauta
+from .models import InversionPauta, Pauta, normalizar_mensaje
 
 
 class PautaForm(forms.ModelForm):
@@ -21,6 +21,16 @@ class PautaForm(forms.ModelForm):
         required=False, label='También llega como', widget=forms.Textarea(attrs={'rows': 3}),
         help_text='Un texto por línea: otros nombres con los que llega el origen de esta pauta (utm_campaign, nombre '
                   'del anuncio…). No distingue mayúsculas, acentos, guiones ni guiones bajos.',
+    )
+
+    anuncios_texto = forms.CharField(
+        required=False, label='IDs de anuncio de Meta', widget=forms.Textarea(attrs={'rows': 2}),
+        help_text='Uno por línea. Es el ID del anuncio en el Administrador de anuncios. Opcional.',
+    )
+    palabras_texto = forms.CharField(
+        required=False, label='Palabras clave en el primer mensaje', widget=forms.Textarea(attrs={'rows': 2}),
+        help_text='Una por línea: un código (#IG-SEP) o una frase del mensaje precargado del link de WhatsApp. '
+                  'Se usa si el chat no trae datos del anuncio. Opcional.',
     )
 
     class Meta:
@@ -34,6 +44,8 @@ class PautaForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['claves_texto'].initial = '\n'.join(self.instance.claves or [])
+        self.fields['anuncios_texto'].initial = '\n'.join(self.instance.anuncio_ids or [])
+        self.fields['palabras_texto'].initial = '\n'.join(self.instance.palabras_clave or [])
         for f in self.fields.values():
             w = f.widget
             w.attrs['class'] = ('form-check-input' if isinstance(w, forms.CheckboxInput)
@@ -45,10 +57,22 @@ class PautaForm(forms.ModelForm):
         self.instance.claves = claves
         # Un mismo texto de origen no puede apuntar a dos pautas
         propias = {services.normalizar_clave(c) for c in [d.get('nombre') or '', *claves]} - {''}
+        lineas = lambda campo: [c.strip() for c in (d.get(campo) or '').splitlines() if c.strip()]
+        self.instance.anuncio_ids = lineas('anuncios_texto')
+        self.instance.palabras_clave = lineas('palabras_texto')
+        cortas = [w for w in self.instance.palabras_clave if len(normalizar_mensaje(w)) < 4]
+        if cortas:
+            self.add_error('palabras_texto', f'"{cortas[0]}" es muy corta: coincidiría con mensajes cualquiera.')
+        anuncios = set(self.instance.anuncio_ids)
+        palabras = {normalizar_mensaje(w) for w in self.instance.palabras_clave} - {''}
         for otra in Pauta.objects.exclude(pk=self.instance.pk):
             choque = propias & otra.claves_normalizadas
             if choque:
                 raise forms.ValidationError(f'"{sorted(choque)[0]}" ya corresponde a la pauta "{otra}".')
+            if anuncios & set(otra.anuncio_ids or []):
+                self.add_error('anuncios_texto', f'El anuncio {sorted(anuncios & set(otra.anuncio_ids))[0]} ya está en la pauta "{otra}".')
+            if palabras & otra.palabras_normalizadas:
+                self.add_error('palabras_texto', f'"{sorted(palabras & otra.palabras_normalizadas)[0]}" ya está en la pauta "{otra}".')
         return d
 
 

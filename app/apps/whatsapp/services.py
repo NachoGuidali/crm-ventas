@@ -112,8 +112,10 @@ def procesar_mensaje_entrante(linea, msg):
     if contacto is None or conv_nueva or reabierta:
         datos = {'telefono': msg.telefono, 'nombre': msg.nombre_perfil or f'WhatsApp {msg.telefono}'}
         if linea.embudo_id and (contacto is None or crm.oportunidad_activa_de(contacto) is None):
+            from apps.pautas.services import resolver_pauta_whatsapp
+            pauta, origen_pauta = resolver_pauta_whatsapp(msg.extra, msg.contenido)
             res = crm.ingresar_prospecto(datos, linea.embudo, Oportunidad.ORIGEN_WHATSAPP, fuente=linea.nombre,
-                                         origen_pauta=(msg.extra or {}).get('pauta', ''))
+                                         origen_pauta=origen_pauta, pauta=pauta)
             contacto, oportunidad = res.contacto, res.oportunidad
         elif contacto is None:
             contacto, _ = crm.upsert_contacto(datos)

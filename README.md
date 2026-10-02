@@ -91,7 +91,7 @@ llegó** y se vincula solo a la pauta que coincide (sin distinguir mayúsculas, 
 
 - **Formulario / API:** campo `origen` libre (si no es un canal del sistema), o `pauta`, `utm_campaign`, `campaign`, `ad_name`.
 - **Excel:** columna "Pauta / origen de campaña" (o una pauta para toda la base).
-- **Carga manual:** selector de pauta. **WhatsApp:** chats abiertos desde anuncios de Meta ("clic para WhatsApp").
+- **Carga manual:** selector de pauta. **WhatsApp:** ID del anuncio de Meta ("clic para WhatsApp"), título del anuncio, o palabras clave / código en el primer mensaje (links `wa.me` con texto precargado). Todo opcional por pauta.
 - **Pauta creada después:** al guardarla se vinculan los leads que ya habían entrado con ese origen. Los orígenes sin
   pauta se listan en el panel con un botón para crearla.
 
@@ -158,7 +158,7 @@ Los datos extra de cada importación se guardan igual (`datos_extra`) y se muest
 ```bash
 cd app && DJANGO_SETTINGS_MODULE=config.settings.test python manage.py test apps
 ```
-97 tests: normalización de teléfonos, deduplicación (1000 ingresos con repetidos), asignación, cierres con
+107 tests: normalización de teléfonos, deduplicación (1000 ingresos con repetidos), asignación, cierres con
 tipificación, postergaciones, importación, webhooks de los 3 proveedores (firma de Meta, idempotencia),
 ventana de 24 h, Anura (entrantes, idempotencia, click2call unificado, discador), automatizaciones, recupero de
 contraseña, bloqueo de login, permisos, API, campos personalizados y obligatorios por etapa.

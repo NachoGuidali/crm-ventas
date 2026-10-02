@@ -97,10 +97,18 @@ class ProveedorTwilio(ProveedorBase):
         mime = post.get('MediaContentType0', '') if num_media else ''
         tipo = mediatype_de_mime(mime) if mime else 'text'
         contenido = post.get('Body', '') or (f'[{tipo.capitalize()}]' if mime else '')
+        extra = {}
+        if post.get('ReferralSourceId') or post.get('ReferralHeadline'):  # chat abierto desde un anuncio de Meta
+            extra['pauta'] = (post.get('ReferralHeadline') or post.get('ReferralSourceId') or 'Anuncio Meta')[:200]
+            extra['referral'] = {'source_type': post.get('ReferralSourceType', ''),
+                                 'source_id': post.get('ReferralSourceId', ''),
+                                 'source_url': post.get('ReferralSourceUrl', ''),
+                                 'headline': post.get('ReferralHeadline', ''),
+                                 'ctwa_clid': post.get('ReferralCtwaClid', '')}
         res.mensajes.append(MensajeEntrante(
             telefono=telefono, wa_id=post.get('MessageSid', ''), tipo=tipo, contenido=contenido,
             nombre_perfil=post.get('ProfileName', ''), media_url=post.get('MediaUrl0', '') if num_media else '',
-            media_mime=mime,
+            media_mime=mime, extra=extra,
         ))
         return res
 

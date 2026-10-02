@@ -13,6 +13,11 @@ def normalizar_clave(texto):
     return re.sub(r'[\s_\-\.]+', ' ', texto).strip()
 
 
+def normalizar_mensaje(texto):
+    """Para palabras clave: además de normalizar_clave, ignora la puntuación ('Hola, quería…!' → 'hola queria')."""
+    return re.sub(r'\s+', ' ', re.sub(r'[^\w#@]+', ' ', normalizar_clave(texto).replace('_', ' '))).strip()
+
+
 class Pauta(models.Model):
     """Campaña de publicidad. Los leads se vinculan por su origen (texto que manda el formulario, la API, etc.)."""
     PLATAFORMAS = [
@@ -26,6 +31,16 @@ class Pauta(models.Model):
         default=list, blank=True, verbose_name='También llega como',
         help_text='Otros textos de origen que corresponden a esta pauta (utm_campaign, nombre del anuncio…). '
                   'No distingue mayúsculas, acentos, guiones ni guiones bajos.',
+    )
+    anuncio_ids = models.JSONField(
+        default=list, blank=True, verbose_name='IDs de anuncio (Meta)',
+        help_text='Para chats de WhatsApp que llegan desde un anuncio "clic para WhatsApp": Meta manda el ID del '
+                  'anuncio en el primer mensaje.',
+    )
+    palabras_clave = models.JSONField(
+        default=list, blank=True, verbose_name='Palabras clave en el primer mensaje de WhatsApp',
+        help_text='Si el chat no trae datos del anuncio, se busca alguno de estos textos en el primer mensaje '
+                  '(un código como #IG-SEP o una frase del mensaje precargado del link).',
     )
     embudo = models.ForeignKey('crm.Embudo', null=True, blank=True, on_delete=models.SET_NULL, related_name='pautas',
                                help_text='Opcional: solo informativo / filtro.')
@@ -51,13 +66,34 @@ class Pauta(models.Model):
         return {normalizar_clave(c) for c in [self.nombre, *(self.claves or [])] if normalizar_clave(c)}
 
     def save(self, *args, **kwargs):
-        self.claves = list(dict.fromkeys(c.strip() for c in (self.claves or []) if c and c.strip()))
+        limpiar = lambda xs: list(dict.fromkeys(str(c).strip() for c in (xs or []) if c and str(c).strip()))
+        self.claves, self.anuncio_ids, self.palabras_clave = (limpiar(self.claves), limpiar(self.anuncio_ids),
+                                                              limpiar(self.palabras_clave))
         super().save(*args, **kwargs)
-        cache.delete('pautas_mapa_claves')
+        cache.delete_many(['pautas_mapa_claves', 'pautas_mapa_whatsapp'])
 
     def delete(self, *args, **kwargs):
         super().delete(*args, **kwargs)
-        cache.delete('pautas_mapa_claves')
+        cache.delete_many(['pautas_mapa_claves', 'pautas_mapa_whatsapp'])
+
+    @property
+    def palabras_normalizadas(self):
+        return {normalizar_mensaje(c) for c in (self.palabras_clave or []) if normalizar_mensaje(c)}
+
+    @classmethod
+    def mapa_whatsapp(cls):
+        """{'anuncios': {id: pauta_pk}, 'palabras': [(palabra_normalizada, pauta_pk)] (más largas primero)}."""
+        mapa = cache.get('pautas_mapa_whatsapp')
+        if mapa is None:
+            anuncios, palabras = {}, []
+            for p in cls.objects.filter(activa=True):
+                for a in p.anuncio_ids or []:
+                    anuncios.setdefault(str(a).strip(), p.pk)
+                palabras += [(w, p.pk) for w in p.palabras_normalizadas]
+            palabras.sort(key=lambda x: -len(x[0]))
+            mapa = {'anuncios': anuncios, 'palabras': palabras}
+            cache.set('pautas_mapa_whatsapp', mapa, 300)
+        return mapa
 
     @classmethod
     def mapa_claves(cls):

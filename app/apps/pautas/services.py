@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from django.db.models import Count, Q, Sum
 
-from .models import InversionPauta, Pauta, normalizar_clave
+from .models import InversionPauta, Pauta, normalizar_clave, normalizar_mensaje
 
 
 def resolver_pauta(texto):
@@ -20,6 +20,34 @@ def resolver_pauta(texto):
         return None
     pk = Pauta.mapa_claves().get(clave)
     return Pauta.objects.filter(pk=pk).first() if pk else None
+
+
+def resolver_pauta_whatsapp(extra, texto):
+    """
+    Pauta de un chat de WhatsApp nuevo. Orden: ID del anuncio de Meta → título del anuncio (nombre o "También llega
+    como") → palabras clave en el primer mensaje. Devuelve (pauta | None, texto de origen para guardar).
+    """
+    extra = extra or {}
+    referral = extra.get('referral') or {}
+    anuncio_id = str(referral.get('source_id') or referral.get('sourceId') or '').strip()
+    titulo = extra.get('pauta', '')
+    mapa = Pauta.mapa_whatsapp()
+    if anuncio_id and anuncio_id in mapa['anuncios']:
+        pauta = Pauta.objects.filter(pk=mapa['anuncios'][anuncio_id]).first()
+        if pauta:
+            return pauta, titulo or f'Anuncio {anuncio_id}'
+    if titulo:
+        pauta = resolver_pauta(titulo)
+        if pauta:
+            return pauta, titulo
+    mensaje = f' {normalizar_mensaje(texto)} '
+    if mensaje:
+        for palabra, pk in mapa['palabras']:
+            if f' {palabra} ' in mensaje or (not palabra[-1].isalnum() and palabra in mensaje):
+                pauta = Pauta.objects.filter(pk=pk).first()
+                if pauta:
+                    return pauta, pauta.nombre
+    return None, titulo or (f'Anuncio {anuncio_id}' if anuncio_id else '')
 
 
 def vincular_existentes(pauta):
