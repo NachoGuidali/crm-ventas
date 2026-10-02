@@ -37,9 +37,16 @@ Con un teléfono propio dentro del CRM se resuelven las dos cosas.
 ## Diseño propuesto
 
 - **Una terminal "CRM" por interno**, marcada como principal (la app de Anura queda como segunda terminal opcional).
-- **Ventanita "Teléfono CRM"** aparte (popup) que mantiene el registro SIP y la llamada mientras el agente navega el
-  CRM (cada pantalla recarga la página). Se comunica con las pestañas del CRM (BroadcastChannel) para mostrar el aviso
-  flotante y los botones.
+- **Teléfono embebido en la misma ventana del CRM (decidido: opción "marco fijo").** Hoy cada pantalla recarga la
+  página entera y eso cortaría la llamada. Solución: la barra lateral, el encabezado y el teléfono quedan siempre
+  cargados y al navegar se reemplaza solo el contenido del medio (Turbo / htmx, o contenido en un marco interno).
+  El registro SIP y la llamada sobreviven al pasar del tablero a una ficha, etc.
+  - Hay que adaptar la navegación de todas las pantallas (formularios, redirecciones, scripts por página, modales)
+    y probarlas: +2–3 días sobre el piloto.
+  - Caso sin solución: recargar a mano (F5) o cerrar la pestaña corta la llamada → aviso "tenés una llamada en curso"
+    (`beforeunload`) antes de salir.
+  - Si hay dos pestañas del CRM abiertas, solo una registra el teléfono (coordinación con BroadcastChannel / lock).
+  - Descartada la ventanita aparte (popup): más simple, pero son dos ventanas y si se cierra no entran llamadas.
 - **Salientes:** se sigue usando Click2Dial (mantiene `custom1` y los eventos); la ventanita **atiende sola** las
   llamadas que dispara el CRM. Alternativa: llamar directo con JsSIP si Anura confirma el punto 5.
 - **Entrantes:** suenan en la ventanita con la ficha del cliente; se atienden y cortan desde el CRM.
@@ -50,10 +57,21 @@ Con un teléfono propio dentro del CRM se resuelven las dos cosas.
 - **Un solo teléfono por agente:** bloquear una segunda ventanita/registro.
 - Reconexión automática, elección de micrófono y auricular, aviso si el navegador bloquea el micrófono.
 
+## JsSIP (lo relevado)
+
+- Librería JavaScript de SIP para navegador, licencia MIT, de los autores del RFC 7118 (SIP sobre WebSocket).
+  Docs: https://jssip.net/documentation/ (API: `/documentation/api/`, interoperabilidad: `/documentation/misc/interoperability/`).
+- **Requisito:** la central debe aceptar **SIP sobre WebSocket (WSS)** → pregunta 2 a Anura. Anura parece correr
+  FreeSWITCH (su widget usa Verto), que soporta WSS si está habilitado.
+- Usaríamos: `UA` (registro con uri, password, sockets WSS), evento `newRTCSession` (entrantes), y en `RTCSession`:
+  `answer`, `terminate`, `mute`/`unmute`, `hold`/`unhold`, `sendDTMF`, `refer` (transferir); `extraHeaders` en salientes.
+- Requiere HTTPS (ya está) y Chrome / Edge / Firefox actuales.
+- **Leer la API completa al arrancar el piloto** (en el relevamiento solo se vieron índices).
+
 ## Plan
 
-1. **Piloto con el interno de prueba 126** (cuenta de otro cliente): 3–5 días. Registro, entrantes con ficha,
-   atención automática de Click2Dial, cortar, silenciar, DTMF.
+1. **Piloto con el interno de prueba 126** (cuenta de otro cliente): 5–8 días. Navegación con marco fijo,
+   registro, entrantes con ficha, atención automática de Click2Dial, cortar, silenciar, DTMF.
 2. **Afinado:** reconexión, dispositivos de audio, un teléfono por agente, credenciales cifradas desde la pantalla.
 3. **Roisa:** crear la terminal "CRM" en cada interno, probar con 1–2 agentes y después pasar a todos.
 
