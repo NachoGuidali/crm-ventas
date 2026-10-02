@@ -33,6 +33,8 @@ Con un teléfono propio dentro del CRM se resuelven las dos cosas.
 4. ¿Cómo se crea la **segunda terminal** por interno y se marca como **principal**? ¿Lo hace el admin de Roisa desde el panel?
 5. Si llamamos **directo desde JsSIP** (sin Click2Dial), ¿se pueden mandar **variables custom** (como `custom1`) que lleguen en los eventos START/TALK/END?
 6. ¿Se puede **limitar por terminal** qué destinos puede llamar (por seguridad)?
+7. Las llamadas atendidas o hechas desde la terminal JsSIP, ¿disparan los **mismos eventos** (START / TALK / END) y se
+   **graban** igual que las del softphone de Anura?
 
 ## Diseño propuesto
 
