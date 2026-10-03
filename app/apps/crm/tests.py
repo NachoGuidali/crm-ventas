@@ -589,3 +589,18 @@ class HistorialDeCambiosTests(BaseCRM):
         textos = list(Actividad.objects.filter(oportunidad=self.op, tipo=Actividad.TIPO_TAREA).values_list('texto', flat=True))
         self.assertTrue(any(t.startswith('Tarea agendada: Llamar mañana') for t in textos), textos)
         self.assertIn('Tarea cancelada: Llamar mañana', textos)
+
+
+class TableroCierreTests(BaseCRM):
+    def test_las_ventas_cerradas_se_ven_en_su_columna(self):
+        op = crm.ingresar_prospecto({'telefono': '1150009999', 'nombre': 'Vendida'}, self.embudo, 'web').oportunidad
+        tip = Tipificacion.objects.filter(resultado=Tipificacion.RESULTADO_VENTA).first()
+        crm.mover_etapa(op, self.embudo.etapa_ganado, self.sup, tipificacion=tip, valor=1000)
+        admin = User.objects.create_user('jefa2', password='x', rol=User.ROL_ADMIN)
+        self.client.force_login(admin)
+        r = self.client.get('/tablero/', {'embudo': self.embudo.pk})
+        col = next(c for c in r.context['columnas'] if c['etapa'] == self.embudo.etapa_ganado)
+        self.assertEqual((col['total'], [c.pk for c in col['cards']]), (1, [op.pk]))
+        self.assertContains(r, 'Vendida')
+        r = self.client.get('/tablero/columna/', {'embudo': self.embudo.pk, 'etapa': self.embudo.etapa_ganado.pk, 'offset': 0})
+        self.assertIn('Vendida', r.json()['html'])

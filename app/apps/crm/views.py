@@ -115,14 +115,12 @@ class TableroView(LoginRequiredMixin, View):
         conteos = dict(base.filter(estado__in=Oportunidad.ESTADOS_ACTIVOS).values_list('etapa')
                        .annotate(n=Count('pk')).values_list('etapa', 'n'))
         for etapa in etapas:
-            if etapa.es_cierre:
-                n = base.filter(etapa=etapa, cerrada_at__gte=hace_30).count()
-                columnas.append({'etapa': etapa, 'total': n, 'cards': [], 'cierre': True})
-                continue
-            qs = self._cards(base, etapa)
-            cards = anotar_campos(list(qs[:POR_COLUMNA]), campos_tarjeta)
-            columnas.append({'etapa': etapa, 'total': conteos.get(etapa.pk, 0), 'cards': cards, 'cierre': False,
-                             'hay_mas': conteos.get(etapa.pk, 0) > POR_COLUMNA})
+            # Venta / No venta: las cerradas en los últimos 30 días, la más reciente arriba
+            total = base.filter(etapa=etapa, cerrada_at__gte=hace_30).count() if etapa.es_cierre \
+                else conteos.get(etapa.pk, 0)
+            cards = anotar_campos(list(self._cards(base, etapa)[:POR_COLUMNA]), campos_tarjeta)
+            columnas.append({'etapa': etapa, 'total': total, 'cards': cards, 'cierre': etapa.es_cierre,
+                             'hay_mas': total > POR_COLUMNA})
         return render(request, 'crm/tablero.html', {
             'embudo': embudo, 'embudos': embudos, 'columnas': columnas, 'agentes': agentes_activos(),
             'tipificaciones': tipificaciones_de(embudo), 'filtros': request.GET,
@@ -139,8 +137,12 @@ class TableroView(LoginRequiredMixin, View):
 
     @staticmethod
     def _cards(base, etapa):
-        qs = (base.filter(etapa=etapa, estado__in=Oportunidad.ESTADOS_ACTIVOS)
-              .select_related('contacto', 'agente').order_by('estado', '-ultima_actividad_at'))
+        if etapa.es_cierre:
+            qs = (base.filter(etapa=etapa, cerrada_at__gte=timezone.now() - timedelta(days=30))
+                  .select_related('contacto', 'agente', 'tipificacion').order_by('-cerrada_at'))
+        else:
+            qs = (base.filter(etapa=etapa, estado__in=Oportunidad.ESTADOS_ACTIVOS)
+                  .select_related('contacto', 'agente').order_by('estado', '-ultima_actividad_at'))
         return _con_marcas(qs)
 
 

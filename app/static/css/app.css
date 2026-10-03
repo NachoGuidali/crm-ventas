@@ -38,8 +38,10 @@
 .col-body { flex: 1; overflow-y: auto; padding: 8px; background: rgba(255,255,255,.015); border: 1px solid var(--border);
             border-top: none; border-radius: 0 0 10px 10px; display: flex; flex-direction: column; gap: 7px; min-height: 120px; }
 .col-body.over { background: var(--blue-dim); outline: 2px dashed var(--blue); outline-offset: -4px; }
-.col.cierre { width: 190px; }
-.col.cierre .col-body { align-items: center; justify-content: center; text-align: center; color: var(--text3); font-size: 12px; min-height: 160px; }
+.drop-cierre { border: 1px dashed var(--border2); border-radius: 10px; padding: 10px; text-align: center; color: var(--text3); font-size: 12px; }
+.drop-cierre i { display: block; font-size: 1.3rem; opacity: .55; margin-bottom: 2px; }
+.drop-cierre .sub { font-size: 10.5px; margin-top: 4px; opacity: .8; }
+.col.cierre .tcard { opacity: .85; }
 .col.cierre.ganado .col-head { border-top-color: var(--green); }
 .col.cierre.perdido .col-head { border-top-color: var(--red); }
 .col.cierre .col-body.over { background: var(--c-dim, var(--blue-dim)); }
