@@ -16,6 +16,13 @@
     <div class="col-12 t t-whatsapp t-email"><label class="form-label">Texto <span class="muted">(si no usás plantilla)</span></label>{{ form.texto }}{{ form.texto.errors }}<div class="form-text">{{ form.texto.help_text }}</div></div>
     <div class="col-md-8 t t-tarea t-notif_agente t-notif_supervisores"><label class="form-label">Título de la tarea / aviso</label>{{ form.tarea_titulo }}</div>
     <div class="col-md-4 t t-tarea"><label class="form-label">Vence en (horas)</label>{{ form.tarea_vence_horas }}</div>
+    <div class="col-12 t t-embudo"><label class="form-label">{{ form.modo_embudo.label }}</label>{{ form.modo_embudo }}{{ form.modo_embudo.errors }}</div>
+    <div class="col-md-6 t t-embudo m-destino"><label class="form-label">{{ form.embudo_destino.label }}</label>{{ form.embudo_destino }}{{ form.embudo_destino.errors }}</div>
+    <div class="col-md-6 t t-embudo m-destino"><label class="form-label">{{ form.etapa_destino.label }}</label>{{ form.etapa_destino }}{{ form.etapa_destino.errors }}<div class="form-text">{{ form.etapa_destino.help_text }}</div></div>
+    <div class="col-md-6 t t-embudo m-volver"><label class="form-label">{{ form.volver_a.label }}</label>{{ form.volver_a }}</div>
+    <div class="col-md-6 t t-embudo"><label class="form-label">{{ form.asignar_destino.label }}</label>{{ form.asignar_destino }}</div>
+    <div class="col-md-6 t t-embudo m-usuario"><label class="form-label">{{ form.usuario_destino.label }}</label>{{ form.usuario_destino }}{{ form.usuario_destino.errors }}</div>
+    <div class="col-12 t t-embudo"><div class="form-text"><b>Crear</b>: para cuando deja de ser lead (ej. Venta → embudo Clientes): la venta queda cerrada y cuenta en reportes; se abre otra tarjeta conectada. <b>Mover</b>: la misma tarjeta cambia de embudo (ej. "En verificación" → embudo Verificaciones) y recuerda de dónde vino. <b>Volver</b>: se configura en el embudo de destino (ej. Verificaciones · "Verificado") y la devuelve a su embudo de origen.</div></div>
     <div class="col-12 small mt-2">
       <label class="d-flex gap-2">{{ form.activa }} Activa</label>
       <label class="d-flex gap-2">{{ form.solo_si_sigue_en_etapa }} {{ form.solo_si_sigue_en_etapa.label }}</label>
@@ -32,7 +39,23 @@
   const textos = {{ plantillas_texto|safe }};
   const upd = () => document.querySelectorAll('.t').forEach(el => el.style.display = el.classList.contains('t-' + tipo.value) ? '' : 'none');
   const prev = () => { const t = pl.value && textos[pl.value] ? textos[pl.value] : tx.value; document.getElementById('prev').textContent = t || '—'; };
-  tipo.addEventListener('change', upd); pl.addEventListener('change', prev); tx.addEventListener('input', prev); upd(); prev();
+  const modo = document.getElementById('id_modo_embudo'), asig = document.getElementById('id_asignar_destino');
+  const emb = document.getElementById('id_embudo_destino'), et = document.getElementById('id_etapa_destino');
+  const opciones = [...et.options].map(o => ({v: o.value, t: o.text}));
+  const filtrarEtapas = () => {
+    const nombre = emb.selectedOptions[0] ? emb.selectedOptions[0].text : '', actual = et.value;
+    et.innerHTML = '';
+    opciones.filter(o => !o.v || o.t.startsWith(nombre + ' · ')).forEach(o => et.add(new Option(o.t.replace(nombre + ' · ', ''), o.v, false, o.v === actual)));
+  };
+  const updEmbudo = () => {
+    if (tipo.value !== 'embudo') return;
+    document.querySelectorAll('.m-destino').forEach(el => el.style.display = modo.value === 'volver' ? 'none' : '');
+    document.querySelectorAll('.m-volver').forEach(el => el.style.display = modo.value === 'volver' ? '' : 'none');
+    document.querySelectorAll('.m-usuario').forEach(el => el.style.display = asig.value === 'usuario' ? '' : 'none');
+  };
+  emb.addEventListener('change', filtrarEtapas); modo.addEventListener('change', updEmbudo); asig.addEventListener('change', updEmbudo);
+  tipo.addEventListener('change', () => { upd(); updEmbudo(); }); pl.addEventListener('change', prev); tx.addEventListener('input', prev);
+  upd(); filtrarEtapas(); updEmbudo(); prev();
 })();
 </script>
 {% endblock %}

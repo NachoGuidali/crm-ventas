@@ -145,6 +145,21 @@ def _correr(accion, op):
         notificar_varios(destinatarios, 'sistema', titulo, f'{contacto.nombre} · {op.etapa}', op.get_absolute_url())
         return E.ESTADO_EJECUTADA, f'Notificados {len(destinatarios)} supervisores'
 
+    if accion.tipo == AccionEtapa.TIPO_EMBUDO:
+        try:
+            if accion.modo_embudo == AccionEtapa.MODO_VOLVER:
+                destino = crm.volver_a_embudo_previo(op, a_la_siguiente=accion.volver_a == AccionEtapa.VOLVER_SIGUIENTE,
+                                                     asignar=accion.asignar_destino,
+                                                     usuario_destino=accion.usuario_destino)
+            else:
+                if accion.embudo_destino is None:
+                    return E.ESTADO_OMITIDA, 'Falta el embudo de destino.'
+                destino = crm.pasar_a_embudo(op, accion.embudo_destino, accion.etapa_destino, modo=accion.modo_embudo,
+                                             asignar=accion.asignar_destino, usuario_destino=accion.usuario_destino)
+        except crm.ErrorNegocio as e:
+            return E.ESTADO_OMITIDA, str(e)
+        return E.ESTADO_EJECUTADA, f'{"Creada #" + str(destino.pk) + " en" if destino.pk != op.pk else "Pasó a"} {destino.embudo} · {destino.etapa}'
+
     return E.ESTADO_OMITIDA, 'Tipo de acción desconocido.'
 
 

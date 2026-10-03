@@ -18,7 +18,8 @@ class AccionForm(forms.ModelForm):
     class Meta:
         model = AccionEtapa
         fields = ['nombre', 'etapa', 'tipo', 'activa', 'solo_si_sigue_en_etapa', 'solo_en_horario', 'plantilla', 'texto',
-                  'linea', 'email_asunto', 'tarea_titulo', 'tarea_vence_horas']
+                  'linea', 'email_asunto', 'tarea_titulo', 'tarea_vence_horas', 'modo_embudo', 'embudo_destino',
+                  'etapa_destino', 'volver_a', 'asignar_destino', 'usuario_destino']
         widgets = {'texto': forms.Textarea(attrs={'rows': 4})}
 
     def __init__(self, *args, embudo=None, **kwargs):
@@ -26,6 +27,14 @@ class AccionForm(forms.ModelForm):
         self.embudo = embudo
         if embudo is not None:
             self.fields['etapa'].queryset = embudo.etapas.order_by('orden')
+        from apps.crm.models import Embudo, Etapa
+        from apps.users.models import User
+        otros = Embudo.objects.filter(activo=True).exclude(pk=getattr(embudo, 'pk', None))
+        self.fields['embudo_destino'].queryset = otros
+        self.fields['etapa_destino'].queryset = (Etapa.objects.filter(embudo__in=otros, tipo=Etapa.TIPO_NORMAL)
+                                                 .select_related('embudo').order_by('embudo__nombre', 'orden'))
+        self.fields['etapa_destino'].label_from_instance = lambda e: f'{e.embudo} · {e.nombre}'
+        self.fields['usuario_destino'].queryset = User.objects.filter(is_active=True).order_by('first_name', 'username')
         m = self.instance.demora_minutos or 0
         if m and m % 1440 == 0:
             self.fields['demora_valor'].initial, self.fields['demora_unidad'].initial = m // 1440, 'd'
@@ -45,6 +54,16 @@ class AccionForm(forms.ModelForm):
             self.add_error('plantilla', 'Elegí una plantilla o escribí un texto.')
         if tipo == AccionEtapa.TIPO_EMAIL and not d.get('texto'):
             self.add_error('texto', 'Escribí el cuerpo del email.')
+        if tipo == AccionEtapa.TIPO_EMBUDO:
+            modo, etapa = d.get('modo_embudo'), d.get('etapa')
+            if modo != AccionEtapa.MODO_VOLVER and not d.get('embudo_destino'):
+                self.add_error('embudo_destino', 'Elegí el embudo de destino.')
+            if d.get('etapa_destino') and d.get('embudo_destino') and d['etapa_destino'].embudo_id != d['embudo_destino'].pk:
+                self.add_error('etapa_destino', 'La etapa no es de ese embudo.')
+            if etapa is not None and etapa.es_cierre and modo != AccionEtapa.MODO_CREAR:
+                self.add_error('modo_embudo', 'En Venta / No venta la tarjeta ya está cerrada: usá "Crear una oportunidad nueva".')
+            if d.get('asignar_destino') == 'usuario' and not d.get('usuario_destino'):
+                self.add_error('usuario_destino', 'Elegí el usuario.')
         return d
 
     def save(self, commit=True):

@@ -479,6 +479,11 @@ class Oportunidad(models.Model):
                              related_name='oportunidades')
     pauta = models.ForeignKey('pautas.Pauta', null=True, blank=True, on_delete=models.SET_NULL,
                               related_name='oportunidades')
+    # Pase entre embudos: de dónde vino la tarjeta (para "volver al embudo anterior") o qué oportunidad la originó
+    embudo_previo = models.ForeignKey('Embudo', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    etapa_previa = models.ForeignKey('Etapa', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    oportunidad_origen = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL,
+                                           related_name='derivadas')
     origen_pauta = models.CharField(max_length=200, blank=True, db_index=True, verbose_name='Origen (pauta)',
                                     help_text='Texto de origen tal cual llegó (formulario, utm_campaign…).')
     valor = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,

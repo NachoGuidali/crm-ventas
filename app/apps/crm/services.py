@@ -567,6 +567,131 @@ def mover_etapa(op: Oportunidad, etapa: Etapa, usuario=None, tipificacion: Tipif
     return historial
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Pase entre embudos
+# ═══════════════════════════════════════════════════════════════════════════
+
+ASIGNAR_MISMO = 'mismo'
+ASIGNAR_EMBUDO = 'embudo'
+ASIGNAR_USUARIO = 'usuario'
+
+
+def _etapa_destino(embudo, etapa):
+    if etapa is not None and etapa.embudo_id != embudo.pk:
+        raise ErrorNegocio('La etapa de destino no pertenece al embudo de destino.')
+    etapa = etapa or embudo.etapa_inicial
+    if etapa is None or etapa.es_cierre:
+        raise ErrorNegocio(f'El embudo "{embudo}" no tiene una etapa de destino válida.')
+    return etapa
+
+
+def _asignar_tras_pase(op, asignar, usuario_destino, agente_anterior):
+    from apps.users.models import User
+    if asignar == ASIGNAR_USUARIO and usuario_destino is not None and usuario_destino.is_active:
+        if op.agente_id != usuario_destino.pk:
+            Oportunidad.objects.filter(pk=op.pk).update(agente=usuario_destino, asignada_at=timezone.now())
+            op.agente = usuario_destino
+            _post_asignacion(op, usuario_destino, usuario=None)
+    elif asignar == ASIGNAR_EMBUDO:
+        Oportunidad.objects.filter(pk=op.pk).update(agente=None)
+        op.agente = None
+        asignar_oportunidad(op)
+    elif agente_anterior is not None and isinstance(agente_anterior, User) and op.agente_id != agente_anterior.pk:
+        Oportunidad.objects.filter(pk=op.pk).update(agente=agente_anterior, asignada_at=timezone.now())
+        op.agente = agente_anterior
+
+
+def pasar_a_embudo(op, embudo, etapa=None, modo='mover', asignar=ASIGNAR_MISMO, usuario_destino=None, usuario=None):
+    """
+    Pasa una oportunidad a otro embudo.
+    - modo 'crear': abre una oportunidad NUEVA en el destino (la original queda como está; ej. Venta → Clientes).
+    - modo 'mover': la MISMA tarjeta cambia de embudo (ej. "En verificación" → embudo Verificaciones); recuerda de
+      dónde vino para poder volver.
+    Devuelve la oportunidad que quedó en el destino.
+    """
+    if embudo.pk == op.embudo_id:
+        raise ErrorNegocio('La oportunidad ya está en ese embudo.')
+    etapa = _etapa_destino(embudo, etapa)
+    if Oportunidad.objects.filter(contacto_id=op.contacto_id, embudo=embudo,
+                                  estado__in=Oportunidad.ESTADOS_ACTIVOS).exclude(pk=op.pk).exists():
+        raise ErrorNegocio(f'El contacto ya tiene una oportunidad en curso en "{embudo}".')
+    faltan = campos_faltantes(op, etapa)
+    if faltan:
+        raise ErrorNegocio(f'Faltan datos obligatorios para "{etapa}": ' + ', '.join(f['nombre'] for f in faltan))
+    ahora = timezone.now()
+
+    if modo == 'crear':
+        try:
+            with transaction.atomic():
+                nueva = Oportunidad.objects.create(
+                    contacto_id=op.contacto_id, embudo=embudo, etapa=etapa, origen=op.origen,
+                    fuente=f'Desde {op.embudo}'[:150], creado_por=usuario, ultima_actividad_at=ahora, etapa_desde=ahora,
+                    oportunidad_origen=op, agente=op.agente if asignar == ASIGNAR_MISMO else None,
+                    asignada_at=ahora if asignar == ASIGNAR_MISMO and op.agente_id else None,
+                )
+                historial = HistorialEtapa.objects.create(oportunidad=nueva, etapa_nueva=etapa, estado_nuevo=nueva.estado,
+                                                          usuario=usuario, nota=f'Desde {op.embudo} · {op.etapa}')
+        except IntegrityError:
+            raise ErrorNegocio(f'El contacto ya tiene una oportunidad en curso en "{embudo}".')
+        Actividad.objects.create(contacto_id=op.contacto_id, oportunidad=nueva, tipo=Actividad.TIPO_SISTEMA,
+                                 usuario=usuario, texto=f'Ingresó al embudo {embudo} ({etapa}) desde la oportunidad '
+                                                        f'#{op.pk} de {op.embudo} ({op.etapa}).')
+        Actividad.objects.create(contacto_id=op.contacto_id, oportunidad=op, tipo=Actividad.TIPO_SISTEMA, usuario=usuario,
+                                 texto=f'Se abrió la oportunidad #{nueva.pk} en el embudo {embudo} ({etapa}).')
+        if asignar == ASIGNAR_MISMO and nueva.agente_id:
+            _post_asignacion(nueva, nueva.agente, usuario=None, notificar_agente=False,
+                             texto=f'Asignada a {nueva.agente.display_name} (misma persona que en {op.embudo})')
+        else:
+            _asignar_tras_pase(nueva, asignar, usuario_destino, None)
+        _disparar_entrada_etapa(nueva, historial)
+        return nueva
+
+    # modo 'mover'
+    agente_anterior = op.agente
+    try:
+        with transaction.atomic():
+            op = Oportunidad.objects.select_for_update(of=('self',)).select_related('embudo', 'etapa', 'contacto').get(pk=op.pk)
+            if not op.activa:
+                raise ErrorNegocio('Solo se pueden mover tarjetas en curso: para una cerrada, abrí una nueva.')
+            embudo_ant, etapa_ant = op.embudo, op.etapa
+            segundos = int((ahora - op.etapa_desde).total_seconds()) if op.etapa_desde else None
+            op.embudo_previo, op.etapa_previa = embudo_ant, etapa_ant
+            op.embudo, op.etapa, op.etapa_desde, op.ultima_actividad_at = embudo, etapa, ahora, ahora
+            op.estado, op.proximo_contacto_at, op.motivo_pausa = Oportunidad.ESTADO_ABIERTA, None, ''
+            op.save(update_fields=['embudo_previo', 'etapa_previa', 'embudo', 'etapa', 'etapa_desde',
+                                   'ultima_actividad_at', 'estado', 'proximo_contacto_at', 'motivo_pausa', 'updated_at'])
+            historial = HistorialEtapa.objects.create(
+                oportunidad=op, etapa_anterior=etapa_ant, etapa_nueva=etapa, estado_anterior=Oportunidad.ESTADO_ABIERTA,
+                estado_nuevo=op.estado, usuario=usuario, nota=f'Pase de embudo: {embudo_ant} → {embudo}',
+                segundos_en_etapa_anterior=segundos,
+            )
+            Actividad.objects.create(contacto=op.contacto, oportunidad=op, tipo=Actividad.TIPO_ETAPA, usuario=usuario,
+                                     texto=f'Pasó del embudo {embudo_ant} ({etapa_ant}) al embudo {embudo} ({etapa}).',
+                                     datos={'pase_embudo': True})
+    except IntegrityError:
+        raise ErrorNegocio(f'El contacto ya tiene una oportunidad en curso en "{embudo}".')
+    _asignar_tras_pase(op, asignar, usuario_destino, agente_anterior)
+    invalidar_tareas(op.agente) if op.agente else None
+    _disparar_entrada_etapa(op, historial)
+    return op
+
+
+def volver_a_embudo_previo(op, a_la_siguiente=False, asignar=ASIGNAR_MISMO, usuario_destino=None, usuario=None):
+    """Devuelve la tarjeta al embudo del que vino (a la etapa donde estaba, o a la siguiente)."""
+    op.refresh_from_db()
+    if op.embudo_previo_id is None:
+        raise ErrorNegocio('La oportunidad no vino de otro embudo.')
+    embudo = op.embudo_previo
+    etapa = op.etapa_previa if op.etapa_previa_id and op.etapa_previa.embudo_id == embudo.pk else None
+    if etapa is not None and a_la_siguiente:
+        etapa = (embudo.etapas.filter(tipo=Etapa.TIPO_NORMAL, orden__gt=etapa.orden).order_by('orden', 'pk').first()
+                 or etapa)
+    if etapa is not None and etapa.es_cierre:
+        etapa = None
+    return pasar_a_embudo(op, embudo, etapa, modo='mover', asignar=asignar, usuario_destino=usuario_destino,
+                          usuario=usuario)
+
+
 def _aplicar_accion_tipificacion(op, tipificacion, usuario):
     if not tipificacion:
         return

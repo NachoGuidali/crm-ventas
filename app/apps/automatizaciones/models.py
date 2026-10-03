@@ -11,15 +11,30 @@ class AccionEtapa(models.Model):
     TIPO_TAREA = 'tarea'
     TIPO_NOTIF_AGENTE = 'notif_agente'
     TIPO_NOTIF_SUPERVISORES = 'notif_supervisores'
+    TIPO_EMBUDO = 'embudo'
     TIPO_CHOICES = [
         (TIPO_WHATSAPP, 'Enviar WhatsApp al prospecto'),
         (TIPO_EMAIL, 'Enviar email al prospecto'),
         (TIPO_TAREA, 'Crear tarea para el agente'),
         (TIPO_NOTIF_AGENTE, 'Notificar al agente'),
         (TIPO_NOTIF_SUPERVISORES, 'Notificar a supervisión'),
+        (TIPO_EMBUDO, 'Pasar a otro embudo'),
     ]
+    MODO_CREAR = 'crear'
+    MODO_MOVER = 'mover'
+    MODO_VOLVER = 'volver'
+    MODO_CHOICES = [
+        (MODO_CREAR, 'Crear una oportunidad nueva en otro embudo (la actual queda como está)'),
+        (MODO_MOVER, 'Mover esta misma tarjeta a otro embudo'),
+        (MODO_VOLVER, 'Volver al embudo del que vino'),
+    ]
+    VOLVER_MISMA = 'misma'
+    VOLVER_SIGUIENTE = 'siguiente'
+    VOLVER_CHOICES = [(VOLVER_MISMA, 'A la etapa donde estaba'), (VOLVER_SIGUIENTE, 'A la etapa siguiente')]
+    ASIGNAR_CHOICES = [('mismo', 'Al mismo agente'), ('embudo', 'Según la regla del embudo de destino'),
+                       ('usuario', 'A un usuario fijo')]
     ICONOS = {TIPO_WHATSAPP: 'whatsapp', TIPO_EMAIL: 'envelope', TIPO_TAREA: 'calendar-plus',
-              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone'}
+              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone', TIPO_EMBUDO: 'signpost-split'}
 
     embudo = models.ForeignKey('crm.Embudo', on_delete=models.CASCADE, related_name='acciones')
     etapa = models.ForeignKey('crm.Etapa', on_delete=models.CASCADE, related_name='acciones',
@@ -51,6 +66,19 @@ class AccionEtapa(models.Model):
     tarea_titulo = models.CharField(max_length=200, blank=True)
     tarea_vence_horas = models.PositiveSmallIntegerField(default=24)
 
+    # Pasar a otro embudo
+    modo_embudo = models.CharField(max_length=10, choices=MODO_CHOICES, default=MODO_CREAR, verbose_name='Cómo')
+    embudo_destino = models.ForeignKey('crm.Embudo', null=True, blank=True, on_delete=models.SET_NULL,
+                                       related_name='+', verbose_name='Embudo de destino')
+    etapa_destino = models.ForeignKey('crm.Etapa', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+                                      verbose_name='Etapa de destino', help_text='Vacío = la primera etapa.')
+    volver_a = models.CharField(max_length=10, choices=VOLVER_CHOICES, default=VOLVER_MISMA,
+                                verbose_name='Al volver, ir')
+    asignar_destino = models.CharField(max_length=10, choices=ASIGNAR_CHOICES, default='mismo',
+                                       verbose_name='Asignar')
+    usuario_destino = models.ForeignKey('users.User', null=True, blank=True, on_delete=models.SET_NULL,
+                                        related_name='+', verbose_name='Usuario')
+
     orden = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -65,6 +93,14 @@ class AccionEtapa(models.Model):
     @property
     def icono(self):
         return self.ICONOS.get(self.tipo, 'lightning')
+
+    def resumen_embudo(self):
+        if self.tipo != self.TIPO_EMBUDO:
+            return ''
+        if self.modo_embudo == self.MODO_VOLVER:
+            return f'Vuelve al embudo de origen ({self.get_volver_a_display().lower()})'
+        destino = f'{self.embudo_destino or "?"}' + (f' · {self.etapa_destino}' if self.etapa_destino_id else '')
+        return ('Nueva oportunidad en ' if self.modo_embudo == self.MODO_CREAR else 'Pasa a ') + destino
 
     def demora_display(self):
         m = self.demora_minutos

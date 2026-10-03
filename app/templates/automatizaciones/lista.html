@@ -12,7 +12,7 @@
   {% for a in g.acciones %}
   <div class="d-flex align-items-center gap-2 mt-2 ps-3 {% if not a.activa %}opacity-50{% endif %}">
     <i class="bi bi-{{ a.icono }}"></i>
-    <div class="flex-grow-1 small"><a href="{% url 'automatizaciones:editar' a.pk %}" class="fw-semibold">{{ a.nombre }}</a> <span class="muted">· {{ a.get_tipo_display }} · {{ a.demora_display }}{% if a.plantilla %} · plantilla «{{ a.plantilla }}»{% endif %}</span></div>
+    <div class="flex-grow-1 small"><a href="{% url 'automatizaciones:editar' a.pk %}" class="fw-semibold">{{ a.nombre }}</a> <span class="muted">· {{ a.get_tipo_display }} · {{ a.demora_display }}{% if a.plantilla %} · plantilla «{{ a.plantilla }}»{% endif %}{% if a.tipo == "embudo" %} · {{ a.resumen_embudo }}{% endif %}</span></div>
     <form method="post" action="{% url 'automatizaciones:editar' a.pk %}">{% csrf_token %}<button name="toggle" value="1" class="btn btn-xs {% if a.activa %}btn-success{% else %}btn-outline-secondary{% endif %}">{% if a.activa %}Activa{% else %}Inactiva{% endif %}</button></form>
   </div>
   {% empty %}<div class="small muted ps-3 mt-1">Sin acciones.</div>{% endfor %}

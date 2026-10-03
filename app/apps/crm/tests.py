@@ -604,3 +604,70 @@ class TableroCierreTests(BaseCRM):
         self.assertContains(r, 'Vendida')
         r = self.client.get('/tablero/columna/', {'embudo': self.embudo.pk, 'etapa': self.embudo.etapa_ganado.pk, 'offset': 0})
         self.assertIn('Vendida', r.json()['html'])
+
+
+class PaseEntreEmbudosTests(BaseCRM):
+    """Venta → nueva oportunidad en Clientes; 'En verificación' → embudo Verificaciones → 'Verificado' vuelve."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.automatizaciones.models import AccionEtapa
+        self.A = AccionEtapa
+        self.clientes = Embudo.objects.create(nombre='Clientes')
+        Etapa.objects.create(embudo=self.clientes, nombre='Bienvenida', orden=1)
+        Etapa.objects.create(embudo=self.clientes, nombre='Activo', orden=2)
+        self.verif = Embudo.objects.create(nombre='Verificaciones')
+        self.v_pend = Etapa.objects.create(embudo=self.verif, nombre='Pendiente', orden=1)
+        self.v_ok = Etapa.objects.create(embudo=self.verif, nombre='Verificado', orden=2)
+        self.op = crm.ingresar_prospecto({'telefono': '1150007777', 'nombre': 'Pase'}, self.embudo, 'web').oportunidad
+
+    def correr(self, accion, op):
+        from apps.automatizaciones.services import _correr
+        return _correr(accion, op)
+
+    def test_venta_crea_oportunidad_en_clientes_y_la_venta_queda(self):
+        ganado = self.embudo.etapa_ganado
+        acc = self.A.objects.create(embudo=self.embudo, etapa=ganado, nombre='A clientes', tipo='embudo',
+                                    modo_embudo='crear', embudo_destino=self.clientes, asignar_destino='mismo')
+        tip = Tipificacion.objects.filter(resultado=Tipificacion.RESULTADO_VENTA).first()
+        crm.mover_etapa(self.op, ganado, self.sup, tipificacion=tip, valor=1000)
+        estado, detalle = self.correr(acc, self.op)
+        self.assertEqual(estado, 'ejecutada', detalle)
+        self.op.refresh_from_db()
+        nueva = Oportunidad.objects.get(embudo=self.clientes)
+        self.assertEqual((self.op.estado, nueva.etapa.nombre, nueva.agente, nueva.oportunidad_origen),
+                         ('ganada', 'Bienvenida', self.op.agente, self.op))
+        self.assertIsNone(nueva.pauta)
+        # Repetir no duplica
+        self.assertEqual(self.correr(acc, self.op)[0], 'omitida')
+
+    def test_verificacion_ida_y_vuelta(self):
+        etapas = list(self.embudo.etapas.filter(tipo='normal').order_by('orden'))
+        en_verif = etapas[1]
+        crm.mover_etapa(self.op, en_verif, self.sup)
+        ida = self.A.objects.create(embudo=self.embudo, etapa=en_verif, nombre='A verificar', tipo='embudo',
+                                    modo_embudo='mover', embudo_destino=self.verif, asignar_destino='usuario',
+                                    usuario_destino=self.sup)
+        vuelta = self.A.objects.create(embudo=self.verif, etapa=self.v_ok, nombre='Volver', tipo='embudo',
+                                       modo_embudo='volver', volver_a='siguiente', asignar_destino='mismo')
+        agente = self.op.agente
+        self.assertEqual(self.correr(ida, self.op)[0], 'ejecutada')
+        self.op.refresh_from_db()
+        self.assertEqual((self.op.embudo, self.op.etapa, self.op.agente, self.op.embudo_previo, self.op.etapa_previa),
+                         (self.verif, self.v_pend, self.sup, self.embudo, en_verif))
+        crm.mover_etapa(self.op, self.v_ok, self.sup)
+        estado, detalle = self.correr(vuelta, self.op)
+        self.assertEqual(estado, 'ejecutada', detalle)
+        self.op.refresh_from_db()
+        self.assertEqual((self.op.embudo, self.op.etapa), (self.embudo, etapas[2]))
+        self.assertEqual(Oportunidad.objects.filter(contacto=self.op.contacto).count(), 1)
+        self.assertTrue(self.op.actividades.filter(texto__startswith='Pasó del embudo').exists())
+
+    def test_formulario_valida(self):
+        from apps.automatizaciones.views import AccionForm
+        f = AccionForm({'nombre': 'x', 'etapa': self.embudo.etapa_ganado.pk, 'tipo': 'embudo', 'modo_embudo': 'mover',
+                        'embudo_destino': self.clientes.pk, 'volver_a': 'misma', 'asignar_destino': 'usuario',
+                        'demora_valor': 0, 'demora_unidad': 'min', 'tarea_vence_horas': 24}, embudo=self.embudo)
+        self.assertFalse(f.is_valid())
+        self.assertIn('modo_embudo', f.errors)
+        self.assertIn('usuario_destino', f.errors)

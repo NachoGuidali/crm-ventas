@@ -415,6 +415,7 @@ Se configuran **por etapa**: "cuando la tarjeta entra a esta etapa, hacer…".
 | Crear tarea | Para el vendedor, con vencimiento en N horas |
 | Notificar al vendedor | Notificación interna |
 | Notificar a supervisión | A los supervisores del embudo |
+| Pasar a otro embudo | **Crear** una oportunidad nueva en otro embudo (la actual queda como está; ej. Venta → embudo Clientes), **mover** la misma tarjeta a otro embudo (ej. "En verificación" → embudo Verificaciones) o **volver** al embudo del que vino (a la etapa donde estaba o a la siguiente). Se elige embudo y etapa de destino y a quién se asigna: mismo agente, regla del embudo destino o un usuario fijo |
 
 Opciones de cada automatización:
 
