@@ -33,6 +33,12 @@
   <div class="col-lg-5">{% include "reportes/_conversion.html" %}</div>
   <div class="col-lg-7">{% include "reportes/_pipeline.html" %}</div>
 </div>
+{% if cc %}<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="kpi"><div class="v">{{ cc.conectado_h }} h</div><div class="l">Tiempo conectada</div></div></div>
+  <div class="col-6 col-md-3"><div class="kpi"><div class="v">{{ cc.habla_min }} min</div><div class="l">Tiempo de habla</div><div class="d">{{ cc.promedio_habla|duracion }} promedio por llamada</div></div></div>
+  <div class="col-6 col-md-3"><div class="kpi"><div class="v">{% if cc.acw_prom is not None %}{{ cc.acw_prom|duracion }}{% else %}—{% endif %}</div><div class="l">After call work promedio</div></div></div>
+  <div class="col-6 col-md-3"><div class="kpi"><div class="v">{% if cc.ocupacion is not None %}{{ cc.ocupacion }}%{% else %}—{% endif %}</div><div class="l">Ocupación (habla / conectada)</div></div></div>
+</div>{% endif %}
 <div class="card"><div class="card-header">Actividad en el período <span class="muted small">· todos los embudos</span></div><div class="card-body">
   {% if act %}<div class="row g-3">{% for k, t in columnas_actividad %}<div class="col-6 col-md-3 col-xl-2"><div class="small muted">{{ t }}</div><div class="fs-5 fw-semibold" style="font-variant-numeric:tabular-nums">{{ act|get_item:k }}</div></div>{% endfor %}</div>
   {% else %}<div class="muted small">Sin actividad registrada en el período.</div>{% endif %}

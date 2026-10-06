@@ -233,3 +233,56 @@ def calidad_envios(ini, fin, horas_respuesta=48, dias_avance=7):
         emails.append(r)
     return {'automatizaciones': por_automatizacion, 'plantillas': por_plantilla, 'emails': emails,
             'horas_respuesta': horas_respuesta, 'dias_avance': dias_avance}
+
+
+def call_center(ini, fin, agentes=None, acw_max_min=15):
+    """
+    Por vendedora: llamadas, tiempo de habla (total y promedio), after call work (tiempo entre que corta y su próxima
+    acción en el CRM, hasta un tope) y tiempo conectado al CRM en el período.
+    """
+    from datetime import timedelta
+    from django.db.models import OuterRef, Subquery
+    from apps.crm.models import Actividad
+    from apps.telefonia.models import Llamada
+    from apps.users.models import SesionConexion, User
+    tope = timedelta(minutes=acw_max_min)
+    proxima = (Actividad.objects.filter(usuario=OuterRef('agente'), created_at__gt=OuterRef('fin_at'),
+                                        created_at__lte=OuterRef('fin_at') + tope)
+               .exclude(tipo=Actividad.TIPO_LLAMADA).order_by('created_at').values('created_at')[:1])
+    proxima_llamada = (Llamada.objects.filter(agente=OuterRef('agente'), inicio_at__gt=OuterRef('fin_at'),
+                                              inicio_at__lte=OuterRef('fin_at') + tope)
+                       .order_by('inicio_at').values('inicio_at')[:1])
+    llamadas = Llamada.objects.filter(inicio_at__range=(ini, fin), agente__isnull=False)
+    if agentes is not None:
+        llamadas = llamadas.filter(agente__in=agentes)
+    datos = {}
+    for ag, direccion, estado, seg, fin_at, prox, prox_ll in (
+            llamadas.annotate(prox=Subquery(proxima), prox_ll=Subquery(proxima_llamada))
+            .values_list('agente', 'direccion', 'estado', 'duracion_seg', 'fin_at', 'prox', 'prox_ll')):
+        d = datos.setdefault(ag, {'llamadas': 0, 'salientes': 0, 'entrantes': 0, 'atendidas': 0, 'habla': 0,
+                                  'acw': [], 'conectado': 0})
+        d['llamadas'] += 1
+        d['salientes' if direccion == Llamada.DIR_SALIENTE else 'entrantes'] += 1
+        if estado == Llamada.ESTADO_ATENDIDA:
+            d['atendidas'] += 1
+            d['habla'] += seg or 0
+            siguiente = min([t for t in (prox, prox_ll) if t] or [None]) if (prox or prox_ll) else None
+            if fin_at and siguiente:
+                d['acw'].append((siguiente - fin_at).total_seconds())
+    sesiones = SesionConexion.objects.filter(inicio__lte=fin).filter(Q(fin__gte=ini) | Q(fin__isnull=True, ultimo__gte=ini))
+    if agentes is not None:
+        sesiones = sesiones.filter(usuario__in=agentes)
+    for s in sesiones:
+        desde, hasta = max(s.inicio, ini), min(s.termina, fin)
+        if hasta > desde:
+            datos.setdefault(s.usuario_id, {'llamadas': 0, 'salientes': 0, 'entrantes': 0, 'atendidas': 0, 'habla': 0,
+                                            'acw': [], 'conectado': 0})['conectado'] += (hasta - desde).total_seconds()
+    usuarios = {u.pk: u for u in User.objects.filter(pk__in=list(datos))}
+    filas = []
+    for pk, d in datos.items():
+        acw = d.pop('acw')
+        d.update(u=usuarios[pk], habla_min=round(d['habla'] / 60), promedio_habla=round(d['habla'] / d['atendidas']) if d['atendidas'] else 0,
+                 acw_prom=round(sum(acw) / len(acw)) if acw else None, conectado_h=round(d['conectado'] / 3600, 1),
+                 ocupacion=_pct(d['habla'], d['conectado']) if d['conectado'] else None)
+        filas.append(d)
+    return sorted(filas, key=lambda f: f['u'].display_name.lower())

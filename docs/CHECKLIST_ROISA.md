@@ -48,6 +48,6 @@ Fuente: "CHECKLIST DE REQUERIMIENTOS CRM – BAMINDS.docx" (06/10/2026). Leyenda
 2. ✅ **SLA** (hecho 06/10): definición por embudo, reporte, reasignación automática, alerta.
 3. ✅ **Automatizaciones por respuesta e inactividad** (hecho 06/10).
 4. ✅ **Calidad de envíos** (hecho 06/10).
-5. **Métricas de call center** (1 día): tiempo conectado, after call work.
+5. ✅ **Métricas de call center** (hecho 06/10): tiempo conectado, after call work.
 6. **Email manual** y **SMS** (1,5–2,5 días).
 7. **Lead scoring** y **proyección** (2 días, opcional).

@@ -212,3 +212,19 @@ class NotificacionInterna(models.Model):
     @property
     def icono(self):
         return self.ICONOS.get(self.tipo, 'bell')
+
+
+class SesionConexion(models.Model):
+    """Tramo en que el usuario tuvo el CRM abierto (para "tiempo conectado"). Se arma con el pulso de la pantalla."""
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sesiones')
+    inicio = models.DateTimeField(db_index=True)
+    ultimo = models.DateTimeField(help_text='Último pulso recibido (si no hay "fin", la sesión terminó acá).')
+    fin = models.DateTimeField(null=True, blank=True, help_text='Salida explícita (botón Salir).')
+
+    class Meta:
+        ordering = ['-inicio']
+        indexes = [models.Index(fields=['usuario', 'inicio'])]
+
+    @property
+    def termina(self):
+        return self.fin or self.ultimo

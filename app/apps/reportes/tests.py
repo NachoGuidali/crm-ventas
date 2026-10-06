@@ -143,3 +143,28 @@ class CalidadEnviosTests(TestCase):
         self.assertEqual(self.client.get(f'/e/c/{envio.token}/?u=https://malo.com').status_code, 404)
         c = analisis.calidad_envios(timezone.now() - timedelta(days=1), timezone.now() + timedelta(minutes=1))
         self.assertEqual((c['emails'][0]['abiertos'], c['emails'][0]['clics']), (1, 1))
+
+
+class CallCenterTests(TestCase):
+    def test_conectado_habla_y_acw(self):
+        from core import presencia
+        from apps.crm.models import Actividad, Contacto
+        from apps.telefonia.models import Llamada
+        from apps.users.models import SesionConexion
+        ana = User.objects.create_user('ana', password='x', first_name='Ana')
+        presencia.marcar(ana)
+        sesion = SesionConexion.objects.get(usuario=ana)
+        sesion.inicio = timezone.now() - timedelta(hours=2)
+        sesion.save()
+        presencia.desconectar(ana)
+        c = Contacto.objects.create(nombre='C', telefono='1150001111')
+        fin = timezone.now() - timedelta(minutes=30)
+        Llamada.objects.create(direccion='OUT', estado='atendida', agente=ana, contacto=c, duracion_seg=300,
+                               inicio_at=fin - timedelta(minutes=5), fin_at=fin)
+        Llamada.objects.create(direccion='OUT', estado='no_atendida', agente=ana, contacto=c,
+                               inicio_at=fin + timedelta(minutes=10), fin_at=fin + timedelta(minutes=11))
+        Actividad.objects.create(contacto=c, tipo='nota', usuario=ana, texto='tipifico', created_at=fin + timedelta(seconds=90))
+        f = analisis.call_center(timezone.now() - timedelta(days=1), timezone.now())[0]
+        self.assertEqual((f['llamadas'], f['atendidas'], f['habla_min'], f['acw_prom'], f['conectado_h']),
+                         (2, 1, 5, 90, 2.0))
+        self.assertAlmostEqual(f['ocupacion'], 4.2, delta=0.1)
