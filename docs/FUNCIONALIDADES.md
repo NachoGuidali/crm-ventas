@@ -650,3 +650,28 @@ permisos, API, campos personalizados, historial de cambios).
 | | Telefonía Anura | Token, internos, rutas, eventos |
 | | Usuarios / Roles y permisos | Accesos y permisos |
 | | Integraciones API | API keys y logs |
+
+---
+
+## 22. Agregado en octubre 2026 (checklist de requerimientos)
+
+Detalle punto por punto en [`CHECKLIST_ROISA.md`](CHECKLIST_ROISA.md).
+
+| Función | Dónde | Qué hace |
+|---|---|---|
+| Leads únicos | Dashboard | Personas distintas del período: nuevas + las que reingresaron |
+| Ingresó N veces | Ficha, lista (×N), filtro | Primer ingreso + reingresos de cada oportunidad |
+| Conversión por etapa | Dashboard, Mis números | De la cohorte del período, cuántos llegaron a cada etapa y % de paso |
+| Pipeline vendedora × etapa | Dashboard, Mis números | Lo que cada vendedora tiene en curso en cada etapa |
+| Actividad por vendedora | Dashboard (CSV) | WhatsApp y plantillas, automáticos, emails, SMS, llamadas, minutos, intentos, notas, etapas, tareas |
+| Mis números | Menú | Panel personal de la vendedora (el supervisor elige a cualquiera) |
+| Refresco automático | Dashboard, Supervisión, Mis números | Cada minuto |
+| SLA de primer contacto | Configuración del embudo | Minutos máximos; avisar o reasignar (con tope); reporte, filtro y alerta |
+| Disparadores de automatización | Automatizaciones | Al entrar · si no responde en X · cuando responde · sin actividad X |
+| Mover de etapa / cerrar | Automatizaciones | Acción automática, con tipificación si cierra |
+| Calidad de envíos | Menú | Entregados, leídos, respondidos y avance por automatización y plantilla; aperturas y clics de emails |
+| Call center | Dashboard, Mis números | Tiempo conectado, habla, promedio, after call work, ocupación |
+| Email manual | Ficha | Con seguimiento de apertura y clics; respuestas al email de la vendedora |
+| SMS | Ficha, automatizaciones, Integraciones | Twilio: envío, respuestas al CRM (dispara "cuando responde") |
+| Puntaje de leads | Configuración | Reglas que suman/restan; se ve en tarjeta y lista, ordena Mi día |
+| Proyección | Dashboard | Ritmo del mes y ventas esperadas del pipeline |
