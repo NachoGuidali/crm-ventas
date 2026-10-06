@@ -510,6 +510,7 @@ class Oportunidad(models.Model):
 
     # Gestión
     intentos_contacto = models.PositiveSmallIntegerField(default=0)
+    puntaje = models.IntegerField(default=0, db_index=True, help_text='Lead scoring según las reglas configuradas.')
     ingresos = models.PositiveIntegerField(default=1, help_text='Veces que la persona entró por esta oportunidad '
                                                                 '(primer ingreso + reingresos).')
     ultimo_intento_at = models.DateTimeField(null=True, blank=True)
@@ -830,3 +831,59 @@ class ReglaAsignacion(models.Model):
         if self.textos_origen:
             partes.append('origen contiene ' + ' o '.join(f'"{t}"' for t in self.textos_origen))
         return ' y '.join(partes) or 'todos los leads'
+
+
+class ReglaPuntaje(models.Model):
+    """Lead scoring por reglas: si el lead cumple la condición, suma (o resta) puntos."""
+    COND_PAUTA = 'pauta'
+    COND_CANAL = 'canal'
+    COND_ORIGEN = 'origen_contiene'
+    COND_CAMPO = 'campo'
+    COND_EMAIL = 'tiene_email'
+    COND_RESPONDIO = 'respondio'
+    COND_ETAPA = 'etapa'
+    COND_INTENTOS = 'intentos_min'
+    COND_INACTIVO = 'sin_actividad_dias'
+    COND_REINGRESOS = 'ingresos_min'
+    CONDICIONES = [
+        (COND_RESPONDIO, 'El cliente respondió alguna vez (WhatsApp, SMS o llamada atendida)'),
+        (COND_PAUTA, 'Vino de la pauta…'), (COND_CANAL, 'Entró por el canal…'),
+        (COND_ORIGEN, 'El origen contiene el texto…'), (COND_CAMPO, 'El campo … tiene el valor … (vacío = tiene dato)'),
+        (COND_EMAIL, 'Tiene email'), (COND_ETAPA, 'Está en la etapa…'),
+        (COND_REINGRESOS, 'Ingresó al menos N veces'), (COND_INTENTOS, 'Lleva al menos N intentos sin contacto efectivo'),
+        (COND_INACTIVO, 'Lleva al menos N días sin actividad'),
+    ]
+    embudo = models.ForeignKey(Embudo, null=True, blank=True, on_delete=models.CASCADE, related_name='reglas_puntaje',
+                               help_text='Vacío = todos los embudos.')
+    condicion = models.CharField(max_length=20, choices=CONDICIONES)
+    pauta = models.ForeignKey('pautas.Pauta', null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+    etapa = models.ForeignKey(Etapa, null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+    campo = models.CharField(max_length=80, blank=True, help_text='Clave del campo (ej. localidad, o la de un campo personalizado).')
+    valor = models.CharField(max_length=200, blank=True)
+    numero = models.PositiveIntegerField(default=0)
+    puntos = models.IntegerField(help_text='Positivo suma, negativo resta.')
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['embudo__nombre', '-puntos', 'pk']
+
+    def __str__(self):
+        return f'{self.descripcion()} → {self.puntos:+d}'
+
+    def descripcion(self):
+        c = self.condicion
+        if c == self.COND_PAUTA:
+            return f'Pauta {self.pauta}'
+        if c == self.COND_CANAL:
+            return f'Canal {dict(Oportunidad.ORIGEN_CHOICES).get(self.valor, self.valor)}'
+        if c == self.COND_ORIGEN:
+            return f'Origen contiene "{self.valor}"'
+        if c == self.COND_CAMPO:
+            return f'{self.campo} = {self.valor}' if self.valor else f'{self.campo} cargado'
+        if c == self.COND_ETAPA:
+            return f'En {self.etapa}'
+        if c in (self.COND_INTENTOS, self.COND_INACTIVO, self.COND_REINGRESOS):
+            return {self.COND_INTENTOS: f'{self.numero}+ intentos sin contacto',
+                    self.COND_INACTIVO: f'{self.numero}+ días sin actividad',
+                    self.COND_REINGRESOS: f'Ingresó {self.numero}+ veces'}[c]
+        return self.get_condicion_display()

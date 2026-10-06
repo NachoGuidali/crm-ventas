@@ -709,3 +709,49 @@ class SLATests(BaseCRM):
         self.client.force_login(self.sup)
         lista = self.client.get('/oportunidades/', {'embudo': self.embudo.pk, 'sla': 'vencido'})
         self.assertEqual([o.pk for o in lista.context['page']], [b.pk])
+
+
+class PuntajeTests(BaseCRM):
+    def test_reglas_y_orden_en_mi_dia(self):
+        from .models import ReglaPuntaje
+        from .puntaje import recalcular_todos
+        from apps.pautas.models import Pauta
+        p = Pauta.objects.create(nombre='Instagram')
+        ReglaPuntaje.objects.create(condicion='pauta', pauta=p, puntos=10)
+        ReglaPuntaje.objects.create(condicion='tiene_email', puntos=5)
+        ReglaPuntaje.objects.create(condicion='respondio', puntos=30)
+        ReglaPuntaje.objects.create(condicion='sin_actividad_dias', numero=7, puntos=-15)
+        Embudo.objects.filter(pk=self.embudo.pk).update(crear_tarea_al_asignar=False)
+        self.embudo.refresh_from_db()
+        with self.captureOnCommitCallbacks(execute=True):
+            a = crm.ingresar_prospecto({'telefono': '1171000001', 'nombre': 'A', 'email': 'a@a.com'}, self.embudo, 'web',
+                                       pauta=p, agente=self.a1).oportunidad
+            b = crm.ingresar_prospecto({'telefono': '1171000002', 'nombre': 'B'}, self.embudo, 'web', agente=self.a1).oportunidad
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertEqual((a.puntaje, b.puntaje), (15, 0))
+        from apps.whatsapp.models import Conversacion, LineaWhatsApp, Mensaje
+        conv = Conversacion.objects.create(linea=LineaWhatsApp.objects.create(nombre='L', proveedor='demo'),
+                                           telefono=b.contacto.telefono, contacto=b.contacto)
+        Mensaje.objects.create(conversacion=conv, direccion='in', contenido='hola')
+        Oportunidad.objects.filter(pk=a.pk).update(ultima_actividad_at=timezone.now() - timedelta(days=8))
+        recalcular_todos()
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertEqual((a.puntaje, b.puntaje), (0, 30))
+        self.assertEqual([o.pk for o in crm.cola_de_trabajo(self.a1)['nuevos']][:2], [b.pk, a.pk])
+
+    def test_proyeccion(self):
+        from apps.reportes import analisis
+        tip = Tipificacion.objects.filter(resultado=Tipificacion.RESULTADO_VENTA).first()
+        op = crm.ingresar_prospecto({'telefono': '1171000010', 'nombre': 'V'}, self.embudo, 'web').oportunidad
+        crm.mover_etapa(op, self.embudo.etapa_ganado, self.sup, tipificacion=tip, valor=1)
+        for i in range(3):
+            crm.ingresar_prospecto({'telefono': f'11710001{i:02d}', 'nombre': 'P'}, self.embudo, 'web')
+        p = analisis.proyeccion(self.embudo)
+        self.assertEqual(p['ventas_mes'], 1)
+        self.assertEqual(p['pipeline_esperadas'], 3)  # 100 % de los cerrados que pasaron por la etapa inicial vendió
+        self.client.force_login(self.sup)
+        self.assertEqual(self.client.get('/config/puntaje/').status_code, 403)
+        admin = User.objects.create_user('adm9', password='x', rol=User.ROL_ADMIN)
+        self.client.force_login(admin)
+        r = self.client.post('/config/puntaje/', {'accion': 'nueva', 'condicion': 'tiene_email', 'puntos': '5'})
+        self.assertEqual(r.status_code, 302)

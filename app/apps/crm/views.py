@@ -176,7 +176,7 @@ class OportunidadListView(LoginRequiredMixin, View):
                            etapa_desde__lt=timezone.now() - timedelta(days=embudo.dias_estancado_alerta or 7))
         orden = request.GET.get('orden', '-created_at')
         if orden.lstrip('-') not in ('created_at', 'ultima_actividad_at', 'etapa_desde', 'intentos_contacto',
-                                     'asignada_at', 'cerrada_at', 'proximo_contacto_at'):
+                                     'asignada_at', 'cerrada_at', 'proximo_contacto_at', 'puntaje'):
             orden = '-created_at'
         qs = _con_marcas(qs.select_related('contacto', 'agente', 'etapa', 'embudo', 'tipificacion', 'pauta').order_by(orden))
         page = paginar(request, qs, 50)
@@ -248,7 +248,7 @@ def _chips_filtros(request, etapas, tipificaciones):
             params.pop(k, None)
         rango = f'{request.GET.get("desde") or "…"} → {request.GET.get("hasta") or "…"}'
         chips.append((f'{campo_fecha}: {rango}', params.urlencode()))
-    for clave, texto in (('q', 'Búsqueda'), ('origen_pauta', 'Origen de pauta:'), ('intentos_min', 'Intentos ≥'), ('intentos_max', 'Intentos ≤'), ('ingresos_min', 'Ingresó ≥ veces:'),
+    for clave, texto in (('q', 'Búsqueda'), ('origen_pauta', 'Origen de pauta:'), ('intentos_min', 'Intentos ≥'), ('intentos_max', 'Intentos ≤'), ('ingresos_min', 'Ingresó ≥ veces:'), ('puntaje_min', 'Puntaje ≥'),
                          ('sin_actividad', 'Sin actividad (días) ≥'), ('estancados', 'Estancados'), ('sla', 'SLA:')):
         if request.GET.get(clave):
             params = request.GET.copy()
@@ -1204,3 +1204,55 @@ class CampoListView(PermisoRequeridoMixin, View):
         return render(request, 'crm/config/campos.html', {
             'campos': campos, 'form': form, 'campo': campo, 'etapas': etapas,
             'etapas_sel': {e.pk for e in etapas if clave and clave in (e.campos_requeridos or [])}})
+
+
+class PuntajeView(PermisoRequeridoMixin, View):
+    """Configuración → Puntaje de leads: reglas de lead scoring."""
+    permiso = 'embudos'
+
+    def get(self, request):
+        from apps.pautas.models import Pauta
+        from .models import ReglaPuntaje
+        return render(request, 'crm/config/puntaje.html', {
+            'reglas': ReglaPuntaje.objects.select_related('embudo', 'pauta', 'etapa'),
+            'condiciones': ReglaPuntaje.CONDICIONES, 'embudos': Embudo.objects.filter(activo=True),
+            'pautas': Pauta.objects.all(), 'canales': Oportunidad.ORIGEN_CHOICES,
+            'etapas': Etapa.objects.select_related('embudo').order_by('embudo__nombre', 'orden'),
+            'campos': [(c, l) for c, l, *_ in CAMPOS_FIJOS_REQUERIBLES] + [
+                (c.slug, f'★ {c.nombre}') for c in CampoPersonalizado.objects.filter(activo=True)],
+            'distribucion': list(Oportunidad.objects.filter(estado__in=Oportunidad.ESTADOS_ACTIVOS)
+                                 .values('puntaje').annotate(n=Count('pk')).order_by('-puntaje')[:15]),
+        })
+
+    def post(self, request):
+        from apps.pautas.models import Pauta
+        from .models import ReglaPuntaje
+        from .puntaje import recalcular_todos
+        accion = request.POST.get('accion')
+        if accion == 'borrar':
+            ReglaPuntaje.objects.filter(pk=request.POST.get('id')).delete()
+        elif accion == 'toggle':
+            r = ReglaPuntaje.objects.filter(pk=request.POST.get('id')).first()
+            if r:
+                r.activa = not r.activa
+                r.save(update_fields=['activa'])
+        elif accion == 'nueva':
+            d = request.POST
+            cond = d.get('condicion')
+            try:
+                puntos = int(d.get('puntos') or 0)
+            except ValueError:
+                puntos = 0
+            if cond not in dict(ReglaPuntaje.CONDICIONES) or not puntos:
+                messages.error(request, 'Elegí la condición y los puntos (distinto de 0).')
+                return redirect('crm:puntaje')
+            ReglaPuntaje.objects.create(
+                condicion=cond, puntos=puntos, embudo=Embudo.objects.filter(pk=d.get('embudo') or 0).first(),
+                pauta=Pauta.objects.filter(pk=d.get('pauta') or 0).first() if cond == ReglaPuntaje.COND_PAUTA else None,
+                etapa=Etapa.objects.filter(pk=d.get('etapa') or 0).first() if cond == ReglaPuntaje.COND_ETAPA else None,
+                campo=(d.get('campo') or '')[:80], valor=(d.get('valor') or d.get('canal') or '')[:200],
+                numero=int(d.get('numero') or 0) if str(d.get('numero') or '0').isdigit() else 0,
+            )
+        n = recalcular_todos()
+        messages.success(request, f'Listo. Se recalculó el puntaje de los leads en curso ({n} cambiaron).')
+        return redirect('crm:puntaje')

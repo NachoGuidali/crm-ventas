@@ -265,6 +265,8 @@ def ingresar_prospecto(datos: dict, embudo: Embudo, origen: str, fuente='', usua
 
     if disparar_automatizaciones:
         _disparar_entrada_etapa(op, historial)
+    from .puntaje import recalcular
+    transaction.on_commit(lambda: recalcular(op))
     return ResultadoIngreso(contacto, op, contacto_nuevo, True)
 
 
@@ -272,6 +274,8 @@ def _registrar_reingreso(op, contacto, texto, usuario, datos=None):
     Actividad.objects.create(contacto=contacto, oportunidad=op, tipo=Actividad.TIPO_REINGRESO, texto=texto,
                              usuario=usuario, datos=datos or {})
     Oportunidad.objects.filter(pk=op.pk).update(ingresos=F('ingresos') + 1)
+    from .puntaje import recalcular
+    transaction.on_commit(lambda: recalcular(op))
     if op.activa:
         tocar(op)
 
@@ -567,6 +571,8 @@ def mover_etapa(op: Oportunidad, etapa: Etapa, usuario=None, tipificacion: Tipif
             op.get_absolute_url(),
         )
     _disparar_entrada_etapa(op, historial)
+    from .puntaje import recalcular
+    transaction.on_commit(lambda: recalcular(op))
     return historial
 
 
@@ -958,9 +964,10 @@ def cola_de_trabajo(user, limite=30):
     con_tarea = {t.oportunidad_id for t in tareas if t.oportunidad_id}
     base = (Oportunidad.objects.filter(agente=user, estado=Oportunidad.ESTADO_ABIERTA)
             .exclude(pk__in=con_tarea).select_related('contacto', 'etapa', 'embudo'))
-    nuevos = list(base.filter(intentos_contacto=0).order_by('asignada_at', 'created_at')[:limite])
+    # Dentro de cada grupo, primero los de mayor puntaje (lead scoring)
+    nuevos = list(base.filter(intentos_contacto=0).order_by('-puntaje', 'asignada_at', 'created_at')[:limite])
     frios = list(base.filter(intentos_contacto__gt=0, ultima_actividad_at__lt=ahora - timedelta(days=1))
-                 .order_by('ultima_actividad_at')[:limite])
+                 .order_by('-puntaje', 'ultima_actividad_at')[:limite])
     return {'tareas': tareas, 'nuevos': nuevos, 'frios': frios}
 
 
@@ -1041,7 +1048,7 @@ def filtrar_oportunidades(qs, params, user):
     if params.get('hasta'):
         qs = qs.filter(**{f'{campo_fecha}__date__lte': params['hasta']})
     for clave, lookup in (('intentos_min', 'intentos_contacto__gte'), ('intentos_max', 'intentos_contacto__lte'),
-                          ('ingresos_min', 'ingresos__gte')):
+                          ('ingresos_min', 'ingresos__gte'), ('puntaje_min', 'puntaje__gte')):
         if str(params.get(clave) or '').isdigit():
             qs = qs.filter(**{lookup: int(params[clave])})
     if params.get('sla') == 'vencido':

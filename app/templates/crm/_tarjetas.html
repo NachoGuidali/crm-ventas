@@ -15,6 +15,7 @@
     {% if o.tiene_vencidas %}<span class="chip danger" title="Tiene tareas vencidas"><i class="bi bi-alarm"></i></span>{% endif %}
     {% if o.contacto.no_contactar %}<span class="chip danger" title="No contactar"><i class="bi bi-slash-circle"></i></span>{% endif %}
     {% if o.intentos_contacto == 0 and o.estado == 'abierta' %}<span class="chip info">Nuevo</span>{% endif %}
+    {% if o.puntaje %}<span class="chip {% if o.puntaje >= 50 %}ok{% elif o.puntaje < 0 %}danger{% endif %}" title="Puntaje del lead"><i class="bi bi-star-fill"></i> {{ o.puntaje }}</span>{% endif %}
   </div>
 </div>
 {% endfor %}

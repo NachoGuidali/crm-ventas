@@ -169,6 +169,7 @@ class DashboardView(PermisoRequeridoMixin, View):
 
         from . import analisis
         return render(request, 'reportes/dashboard.html', {
+            'proy': analisis.proyeccion(embudo),
             'sla': analisis.sla(embudo, ini, fin), 'call_center': analisis.call_center(ini, fin),
             'unicos': analisis.leads_unicos(embudo, ini, fin), 'conversion': analisis.embudo_conversion(embudo, ini, fin),
             'pipeline': analisis.matriz_pipeline(embudo), 'actividad': analisis.actividad_vendedoras(ini, fin),

@@ -170,6 +170,7 @@ CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_BEAT_SCHEDULE = {
     'asignar-pendientes': {'task': 'crm.asignar_pendientes', 'schedule': 120},
     'revisar-sla': {'task': 'crm.revisar_sla', 'schedule': 120},
+    'recalcular-puntajes': {'task': 'crm.recalcular_puntajes', 'schedule': crontab(minute=40)},
     'reactivar-pausadas': {'task': 'crm.reactivar_pausadas', 'schedule': 300},
     'vencer-tareas': {'task': 'crm.notificar_tareas_vencidas', 'schedule': 600},
     'automatizaciones-programadas': {'task': 'automatizaciones.barrer_programadas', 'schedule': 60},

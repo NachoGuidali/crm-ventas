@@ -75,3 +75,9 @@ def accion_masiva(self, user_id, accion, ids, datos):
 def revisar_sla():
     from .services import revisar_sla as revisar
     return revisar()
+
+
+@shared_task(name='crm.recalcular_puntajes')
+def recalcular_puntajes():
+    from .puntaje import recalcular_todos
+    return recalcular_todos()

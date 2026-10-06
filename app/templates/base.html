@@ -97,6 +97,11 @@
         <span class="nav-icon"><i class="bi bi-ui-checks-grid"></i></span> Campos personalizados
       </a>
       {% endif %}
+      {% if 'embudos' in perms_crm %}
+      <a href="{% url 'crm:puntaje' %}" class="nav-item {% if url_name == 'puntaje' %}active{% endif %}">
+        <span class="nav-icon"><i class="bi bi-star-half"></i></span> Puntaje de leads
+      </a>
+      {% endif %}
       {% if 'automatizaciones' in perms_crm %}
       <a href="{% url 'automatizaciones:lista' %}" class="nav-item {% if seccion == 'automatizaciones' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-lightning-charge"></i></span> Automatizaciones

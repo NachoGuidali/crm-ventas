@@ -111,6 +111,8 @@ def cliente_respondio(op):
     """El cliente respondió (mensaje entrante o llamada atendida): dispara las automatizaciones "Cuando responde"."""
     if op is None or not op.activa:
         return 0
+    from apps.crm.puntaje import recalcular
+    recalcular(op)
     acciones = list(AccionEtapa.objects.filter(etapa_id=op.etapa_id, activa=True, disparador=AccionEtapa.DISP_RESPUESTA))
     if not acciones:
         return 0

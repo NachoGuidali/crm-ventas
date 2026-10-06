@@ -287,3 +287,38 @@ def call_center(ini, fin, agentes=None, acw_max_min=15):
                  ocupacion=_pct(d['habla'], d['conectado']) if d['conectado'] else None)
         filas.append(d)
     return sorted(filas, key=lambda f: f['u'].display_name.lower())
+
+
+def proyeccion(embudo, dias_historia=90):
+    """
+    Dos proyecciones simples: (1) ritmo del mes: ventas hasta hoy llevadas a fin de mes; (2) ventas esperadas del
+    pipeline actual: en curso por etapa × % que terminó en venta (de los cerrados en los últimos N días que pasaron
+    por esa etapa).
+    """
+    import calendar
+    from datetime import timedelta
+    from django.utils import timezone
+    from apps.crm.models import Etapa, HistorialEtapa, Oportunidad
+    if embudo is None:
+        return None
+    hoy = timezone.localdate()
+    tz = timezone.get_current_timezone()
+    from datetime import datetime
+    ini_mes = timezone.make_aware(datetime.combine(hoy.replace(day=1), datetime.min.time()), tz)
+    ventas_mes = Oportunidad.objects.filter(embudo=embudo, estado=Oportunidad.ESTADO_GANADA, cerrada_at__gte=ini_mes).count()
+    dias_mes = calendar.monthrange(hoy.year, hoy.month)[1]
+    ritmo = round(ventas_mes * dias_mes / hoy.day) if hoy.day else ventas_mes
+    desde = timezone.now() - timedelta(days=dias_historia)
+    cerradas = Oportunidad.objects.filter(embudo=embudo, cerrada_at__gte=desde,
+                                          estado__in=[Oportunidad.ESTADO_GANADA, Oportunidad.ESTADO_PERDIDA])
+    esperadas, detalle = 0.0, []
+    for e in embudo.etapas.filter(tipo=Etapa.TIPO_NORMAL).order_by('orden'):
+        pasaron = cerradas.filter(pk__in=HistorialEtapa.objects.filter(etapa_nueva=e).values('oportunidad_id'))
+        total = pasaron.count()
+        tasa = pasaron.filter(estado=Oportunidad.ESTADO_GANADA).count() / total if total else 0
+        en_curso = Oportunidad.objects.filter(embudo=embudo, etapa=e, estado__in=Oportunidad.ESTADOS_ACTIVOS).count()
+        esperadas += en_curso * tasa
+        detalle.append({'etapa': e.nombre, 'en_curso': en_curso, 'tasa': round(tasa * 100, 1),
+                        'esperadas': round(en_curso * tasa, 1)})
+    return {'ventas_mes': ventas_mes, 'ritmo_fin_de_mes': ritmo, 'pipeline_esperadas': round(esperadas),
+            'detalle': detalle, 'dias_historia': dias_historia}
