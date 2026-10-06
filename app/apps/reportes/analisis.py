@@ -113,7 +113,8 @@ def actividad_vendedoras(ini, fin, agentes=None):
                   notas=Count('pk', filter=Q(tipo=Actividad.TIPO_NOTA)),
                   intentos=Count('pk', filter=Q(tipo=Actividad.TIPO_INTENTO)),
                   etapas=Count('pk', filter=Q(tipo__in=[Actividad.TIPO_ETAPA, Actividad.TIPO_CIERRE])),
-                  emails=Count('pk', filter=Q(tipo=Actividad.TIPO_EMAIL)))
+                  emails=Count('pk', filter=Q(tipo=Actividad.TIPO_EMAIL)),
+                  sms=Count('pk', filter=Q(tipo=Actividad.TIPO_SMS)))
     emails_auto = por(acts.filter(tipo=Actividad.TIPO_EMAIL, usuario__isnull=True, oportunidad__agente__isnull=False),
                       'oportunidad__agente', n=Count('pk'))
     llamadas = por(Llamada.objects.filter(inicio_at__range=(ini, fin), agente__isnull=False), 'agente',
@@ -132,7 +133,7 @@ def actividad_vendedoras(ini, fin, agentes=None):
         filas.append({
             'u': u, 'mensajes': m.get('mensajes', 0), 'plantillas': m.get('plantillas', 0),
             'automaticos': automaticos.get(u.pk, {}).get('n', 0), 'emails': p.get('emails', 0),
-            'emails_auto': emails_auto.get(u.pk, {}).get('n', 0),
+            'emails_auto': emails_auto.get(u.pk, {}).get('n', 0), 'sms': p.get('sms', 0),
             'llamadas': ll.get('n', 0), 'llamadas_salientes': ll.get('salientes', 0),
             'llamadas_atendidas': ll.get('atendidas', 0), 'minutos': round(seg / 60),
             'promedio_seg': round(seg / ll['atendidas']) if ll.get('atendidas') else 0,
@@ -144,7 +145,7 @@ def actividad_vendedoras(ini, fin, agentes=None):
 
 COLUMNAS_ACTIVIDAD = [
     ('mensajes', 'WhatsApp enviados'), ('plantillas', 'de ellos, plantillas'), ('automaticos', 'WhatsApp automáticos'),
-    ('emails', 'Emails'), ('emails_auto', 'Emails automáticos'), ('llamadas', 'Llamadas'),
+    ('emails', 'Emails'), ('emails_auto', 'Emails automáticos'), ('sms', 'SMS'), ('llamadas', 'Llamadas'),
     ('llamadas_atendidas', 'Atendidas'), ('minutos', 'Minutos'), ('promedio_seg', 'Duración prom. (s)'),
     ('intentos', 'Intentos'), ('notas', 'Notas'), ('etapas', 'Cambios de etapa'), ('tareas', 'Tareas completadas'),
 ]

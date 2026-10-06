@@ -5,6 +5,8 @@ from django.core.management import call_command
 from core.testing import TestCase
 from apps.crm.models import Contacto, Embudo, Oportunidad
 
+from apps.users.models import User
+
 from .models import ApiKey
 
 
@@ -38,3 +40,51 @@ class ApiLeadsTests(TestCase):
         self.post({'nombre': 'Ana', 'telefono': '1155550000'})
         r = self.client.get('/api/v1/leads/buscar/', {'telefono': '011 15 5555 0000'}, HTTP_X_API_KEY=self.clave)
         self.assertEqual(r.json()['contacto']['nombre'], 'Ana')
+
+
+class EmailYSMSDesdeLaFichaTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+        from apps.crm.models import Embudo
+        call_command('setup_inicial', '--sin-admin', verbosity=0)
+        cls.embudo = Embudo.objects.get()
+        cls.ana = User.objects.create_user('ana3', password='x', email='ana@roisa.com')
+        cls.embudo.agentes.set([cls.ana])
+
+    def setUp(self):
+        super().setUp()
+        from apps.crm import services as crm
+        self.op = crm.ingresar_prospecto({'telefono': '1155550101', 'nombre': 'Rosa Paz', 'email': 'rosa@x.com'},
+                                         self.embudo, 'web').oportunidad
+        self.client.force_login(self.ana)
+
+    def test_email_manual(self):
+        from django.core import mail
+        from apps.automatizaciones.models import EmailEnviado
+        r = self.client.post(f'/oportunidades/{self.op.pk}/email/', json.dumps({'asunto': 'Hola {primer_nombre}',
+                             'cuerpo': 'Te paso la info'}), content_type='application/json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((mail.outbox[-1].subject, mail.outbox[-1].reply_to), ('Hola Rosa', ['ana@roisa.com']))
+        self.assertEqual(EmailEnviado.objects.get().enviado_por, self.ana)
+        self.op.refresh_from_db()
+        self.assertIsNotNone(self.op.primer_contacto_at)
+        self.assertTrue(self.op.actividades.filter(tipo='email', usuario=self.ana).exists())
+
+    def test_sms_ida_y_vuelta(self):
+        from unittest import mock
+        from .models import ConfigSMS
+        c = ConfigSMS.get()
+        c.activo, c.account_sid, c.auth_token, c.numero = True, 'AC1', 'tok', '+15550001111'
+        c.save()
+        resp = mock.Mock(status_code=201)
+        resp.json.return_value = {'sid': 'SM1'}
+        with mock.patch('apps.integraciones.sms.requests.post', return_value=resp) as post:
+            r = self.client.post(f'/oportunidades/{self.op.pk}/sms/', json.dumps({'texto': 'Hola {primer_nombre}'}),
+                                 content_type='application/json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(post.call_args.kwargs['data'], {'To': '+5491155550101', 'Body': 'Hola Rosa', 'From': '+15550001111'})
+        r = self.client.post(f'/integraciones/sms/webhook/{c.webhook_token}/', {'From': '+5491155550101', 'Body': 'sí!'})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self.op.actividades.filter(tipo='sms', texto__contains='sí!').exists())
+        self.assertEqual(self.client.post('/integraciones/sms/webhook/malo/', {'From': '1', 'Body': 'x'}).status_code, 403)

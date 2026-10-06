@@ -425,8 +425,13 @@ def contexto_chat(request, contacto, oportunidad=None):
     }
 
 
+def _sms_operativo():
+    from apps.integraciones.models import ConfigSMS
+    return bool(ConfigSMS.get().operativo)
+
+
 FILTROS_ACTIVIDAD = [
-    ('', 'Todo'), ('nota', 'Notas'), ('llamada,intento', 'Llamadas'), ('whatsapp,email', 'Mensajes'),
+    ('', 'Todo'), ('nota', 'Notas'), ('llamada,intento', 'Llamadas'), ('whatsapp,email,sms', 'Mensajes'),
     ('etapa,cierre,pausa', 'Etapas'), ('cambio', 'Cambios de datos'), ('asignacion', 'Asignaciones'), ('tarea', 'Tareas'),
     ('sistema,reingreso', 'Sistema'),
 ]
@@ -441,7 +446,7 @@ class OportunidadDetalleView(LoginRequiredMixin, View):
         ctx = {
             'op': op, 'contacto': contacto, 'etapas': etapas_de(op.embudo),
             'tipificaciones': tipificaciones_de(op.embudo), 'actividades': actividades,
-            'filtros_actividad': FILTROS_ACTIVIDAD,
+            'filtros_actividad': FILTROS_ACTIVIDAD, 'sms_activo': _sms_operativo(),
             'tareas': op.tareas.filter(estado=Tarea.ESTADO_PENDIENTE).select_related('asignado_a').order_by('vence_at'),
             'otras': contacto.oportunidades.exclude(pk=op.pk).select_related('embudo', 'etapa', 'agente'),
             'llamadas': contacto.llamadas.select_related('agente').order_by('-inicio_at')[:30],
@@ -547,6 +552,38 @@ class AccionOportunidadView(LoginRequiredMixin, View):
         msg = f'Intento #{op.intentos_contacto} registrado'
         return ok(mensaje=msg, max_intentos=maximo, intentos=op.intentos_contacto, recargar=not maximo,
                   sugerencia='Llegó al máximo de intentos: ¿lo cerrás como "Sin respuesta"?' if maximo else '')
+
+    def _email(self, request, op, data, user):
+        from apps.automatizaciones.services import enviar_email
+        from apps.whatsapp.models import reemplazar_variables_texto
+        contacto = op.contacto
+        if not contacto.email:
+            return error('El contacto no tiene email.')
+        if contacto.no_contactar:
+            return error('El contacto pidió no ser contactado.')
+        asunto, cuerpo = (data.get('asunto') or '').strip(), (data.get('cuerpo') or '').strip()
+        if not asunto or not cuerpo:
+            return error('Completá el asunto y el mensaje.')
+        try:
+            enviar_email(contacto, op, reemplazar_variables_texto(asunto, contacto, op),
+                         reemplazar_variables_texto(cuerpo, contacto, op), usuario=user)
+        except Exception as e:  # SMTP caído, dirección rechazada…
+            return error(f'No se pudo enviar el email: {e}')
+        crm.tocar(op)
+        crm.marcar_primer_contacto(op)
+        crm.avanzar_desde_inicial(op, user)
+        return ok(mensaje=f'Email enviado a {contacto.email}', recargar=True)
+
+    def _sms(self, request, op, data, user):
+        from apps.integraciones import sms
+        from apps.whatsapp.models import reemplazar_variables_texto
+        try:
+            sms.enviar(op.contacto, reemplazar_variables_texto(data.get('texto', ''), op.contacto, op), usuario=user,
+                       oportunidad=op)
+        except sms.ErrorSMS as e:
+            return error(str(e))
+        crm.avanzar_desde_inicial(op, user)
+        return ok(mensaje='SMS enviado', recargar=True)
 
     def _nota(self, request, op, data, user):
         texto = (data.get('texto') or '').strip()

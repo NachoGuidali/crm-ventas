@@ -15,6 +15,20 @@ from .models import AccionEtapa, EjecucionAccion, EmailEnviado
 logger = logging.getLogger('apps.automatizaciones')
 
 
+def enviar_email(contacto, op, asunto, cuerpo, usuario=None, accion=None):
+    """Envía un email (manual o automático) con seguimiento de apertura y clics, y lo registra en la ficha."""
+    from apps.crm.models import Actividad
+    envio = EmailEnviado.objects.create(accion=accion, oportunidad=op, contacto=contacto, para=contacto.email,
+                                        asunto=asunto[:200], token=secrets.token_urlsafe(24), enviado_por=usuario)
+    mail = EmailMultiAlternatives(asunto, cuerpo, settings.DEFAULT_FROM_EMAIL, [contacto.email],
+                                  reply_to=[usuario.email] if usuario is not None and usuario.email else None)
+    mail.attach_alternative(html_con_seguimiento(cuerpo, envio.token), 'text/html')
+    mail.send(fail_silently=False)
+    Actividad.objects.create(contacto=contacto, oportunidad=op, tipo=Actividad.TIPO_EMAIL, usuario=usuario,
+                             texto=f'Email{" automático" if usuario is None else ""}: {asunto}\n{cuerpo[:500]}')
+    return envio
+
+
 def html_con_seguimiento(cuerpo, token):
     """Cuerpo del email en HTML con los links redirigidos (clics) y un píxel invisible (aperturas)."""
     import re
@@ -204,13 +218,7 @@ def _correr(accion, op, ejec_desde=None):
             return E.ESTADO_OMITIDA, 'Sin email o contacto marcado como "no contactar".'
         cuerpo = reemplazar_variables_texto(accion.texto, contacto, op)
         asunto = reemplazar_variables_texto(accion.email_asunto or op.embudo.nombre, contacto, op)
-        envio = EmailEnviado.objects.create(accion=accion, oportunidad=op, contacto=contacto, para=contacto.email,
-                                            asunto=asunto[:200], token=secrets.token_urlsafe(24))
-        mail = EmailMultiAlternatives(asunto, cuerpo, settings.DEFAULT_FROM_EMAIL, [contacto.email])
-        mail.attach_alternative(html_con_seguimiento(cuerpo, envio.token), 'text/html')
-        mail.send(fail_silently=False)
-        Actividad.objects.create(contacto=contacto, oportunidad=op, tipo=Actividad.TIPO_EMAIL,
-                                 texto=f'Email automático: {asunto}\n{cuerpo[:500]}')
+        enviar_email(contacto, op, asunto, cuerpo, accion=accion)
         return E.ESTADO_EJECUTADA, f'Email enviado a {contacto.email}'
 
     titulo = reemplazar_variables_texto(accion.tarea_titulo or accion.nombre, contacto, op)
@@ -247,6 +255,16 @@ def _correr(accion, op, ejec_desde=None):
         except crm.ErrorNegocio as e:
             return E.ESTADO_OMITIDA, str(e)
         return E.ESTADO_EJECUTADA, f'{"Creada #" + str(destino.pk) + " en" if destino.pk != op.pk else "Pasó a"} {destino.embudo} · {destino.etapa}'
+
+    if accion.tipo == AccionEtapa.TIPO_SMS:
+        from apps.integraciones import sms
+        if not contacto.puede_recibir_mensajes:
+            return E.ESTADO_OMITIDA, 'El contacto no acepta mensajes o no tiene teléfono válido.'
+        try:
+            sms.enviar(contacto, reemplazar_variables_texto(accion.texto, contacto, op), oportunidad=op)
+        except sms.ErrorSMS as e:
+            return E.ESTADO_OMITIDA, str(e)
+        return E.ESTADO_EJECUTADA, f'SMS enviado a {contacto.telefono}'
 
     if accion.tipo == AccionEtapa.TIPO_ETAPA:
         destino = accion.mover_a

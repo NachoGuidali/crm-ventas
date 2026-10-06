@@ -57,6 +57,8 @@ class AccionForm(forms.ModelForm):
         tipo = d.get('tipo')
         if tipo == AccionEtapa.TIPO_WHATSAPP and not (d.get('plantilla') or d.get('texto')):
             self.add_error('plantilla', 'Elegí una plantilla o escribí un texto.')
+        if tipo == AccionEtapa.TIPO_SMS and not d.get('texto'):
+            self.add_error('texto', 'Escribí el texto del SMS.')
         if tipo == AccionEtapa.TIPO_EMAIL and not d.get('texto'):
             self.add_error('texto', 'Escribí el cuerpo del email.')
         disp = d.get('disparador')

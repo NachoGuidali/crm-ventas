@@ -6,6 +6,7 @@ app_name = 'integraciones'
 
 urlpatterns = [
     path('', views.ApiKeysView.as_view(), name='lista'),
+    path('sms/webhook/<str:token>/', views.SMSWebhookView.as_view(), name='sms_webhook'),
 ]
 
 api_urlpatterns = [

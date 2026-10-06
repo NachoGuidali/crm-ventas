@@ -13,6 +13,7 @@ class AccionEtapa(models.Model):
     TIPO_NOTIF_SUPERVISORES = 'notif_supervisores'
     TIPO_EMBUDO = 'embudo'
     TIPO_ETAPA = 'etapa'
+    TIPO_SMS = 'sms'
     DISP_ENTRADA = 'entrada'
     DISP_SIN_RESPUESTA = 'sin_respuesta'
     DISP_RESPUESTA = 'respuesta'
@@ -26,6 +27,7 @@ class AccionEtapa(models.Model):
     TIPO_CHOICES = [
         (TIPO_WHATSAPP, 'Enviar WhatsApp al prospecto'),
         (TIPO_EMAIL, 'Enviar email al prospecto'),
+        (TIPO_SMS, 'Enviar SMS al prospecto'),
         (TIPO_TAREA, 'Crear tarea para el agente'),
         (TIPO_NOTIF_AGENTE, 'Notificar al agente'),
         (TIPO_NOTIF_SUPERVISORES, 'Notificar a supervisión'),
@@ -46,7 +48,7 @@ class AccionEtapa(models.Model):
     ASIGNAR_CHOICES = [('mismo', 'Al mismo agente'), ('embudo', 'Según la regla del embudo de destino'),
                        ('usuario', 'A un usuario fijo')]
     ICONOS = {TIPO_WHATSAPP: 'whatsapp', TIPO_EMAIL: 'envelope', TIPO_TAREA: 'calendar-plus',
-              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone', TIPO_EMBUDO: 'signpost-split', TIPO_ETAPA: 'arrow-right-circle'}
+              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone', TIPO_EMBUDO: 'signpost-split', TIPO_ETAPA: 'arrow-right-circle', TIPO_SMS: 'phone'}
 
     embudo = models.ForeignKey('crm.Embudo', on_delete=models.CASCADE, related_name='acciones')
     etapa = models.ForeignKey('crm.Etapa', on_delete=models.CASCADE, related_name='acciones',
@@ -164,6 +166,7 @@ class EmailEnviado(models.Model):
     accion = models.ForeignKey(AccionEtapa, null=True, blank=True, on_delete=models.SET_NULL, related_name='emails')
     oportunidad = models.ForeignKey('crm.Oportunidad', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     contacto = models.ForeignKey('crm.Contacto', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    enviado_por = models.ForeignKey('users.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     para = models.EmailField()
     asunto = models.CharField(max_length=200)
     token = models.CharField(max_length=40, unique=True)

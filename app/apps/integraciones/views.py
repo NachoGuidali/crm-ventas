@@ -183,7 +183,9 @@ class ApiKeysView(PermisoRequeridoMixin, View):
 
     def get(self, request):
         from apps.crm.models import Embudo
+        from .models import ConfigSMS
         return render(request, 'integraciones/lista.html', {
+            'sms': ConfigSMS.get(),
             'claves': ApiKey.objects.select_related('embudo'), 'embudos': Embudo.objects.filter(activo=True),
             'logs': LogIntegracion.objects.select_related('api_key')[:30],
             'base_url': settings.SITE_URL, 'nueva_clave': request.session.pop('nueva_clave', None),
@@ -191,6 +193,17 @@ class ApiKeysView(PermisoRequeridoMixin, View):
 
     def post(self, request):
         from apps.crm.models import Embudo
+        if request.POST.get('accion') == 'sms':
+            from .models import ConfigSMS
+            c = ConfigSMS.get()
+            c.activo = bool(request.POST.get('activo'))
+            c.account_sid = request.POST.get('account_sid', '').strip()
+            if request.POST.get('auth_token', '').strip():
+                c.auth_token = request.POST['auth_token'].strip()
+            c.numero = request.POST.get('numero', '').strip()
+            c.save()
+            messages.success(request, 'Configuración de SMS guardada.')
+            return redirect('integraciones:lista')
         if request.POST.get('revocar'):
             ApiKey.objects.filter(pk=request.POST['revocar']).update(activa=False)
             messages.success(request, 'Clave revocada.')
@@ -206,3 +219,21 @@ class ApiKeysView(PermisoRequeridoMixin, View):
             request.session['nueva_clave'] = clave
             messages.success(request, 'Clave creada. Copiala ahora: por seguridad no se vuelve a mostrar.')
         return redirect('integraciones:lista')
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class SMSWebhookView(View):
+    """Twilio → respuestas por SMS. URL: /integraciones/sms/webhook/<token>/ (se configura en el número de Twilio)."""
+
+    def post(self, request, token):
+        import secrets
+        from django.http import HttpResponse
+        from core.phone import normalizar_telefono
+        from .models import ConfigSMS
+        from . import sms
+        if not secrets.compare_digest(token, ConfigSMS.get().webhook_token):
+            return HttpResponse(status=403)
+        tel = normalizar_telefono(request.POST.get('From', ''))
+        if tel and request.POST.get('Body'):
+            sms.recibir(tel, request.POST['Body'])
+        return HttpResponse('<Response/>', content_type='text/xml')

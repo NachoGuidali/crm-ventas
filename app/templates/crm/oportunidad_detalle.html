@@ -27,6 +27,8 @@
         <button class="btn btn-primary btn-sm" data-llamar data-op="{{ op.pk }}"><i class="bi bi-telephone"></i> Llamar</button>
         {% endif %}
         {% if contacto.telefono %}<a class="btn btn-success btn-sm" href="#whatsapp" onclick="document.querySelector('[data-bs-target=\'#tabWa\']').click()"><i class="bi bi-whatsapp"></i> WhatsApp</a>{% endif %}
+        {% if contacto.email %}<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modalEmail"><i class="bi bi-envelope"></i> Email</button>{% endif %}
+        {% if sms_activo and contacto.telefono %}<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modalSms"><i class="bi bi-phone"></i> SMS</button>{% endif %}
         {% if op.estado == 'abierta' %}
         <div class="btn-group btn-group-sm">
           <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-telephone-x"></i> Intento sin éxito</button>
@@ -209,6 +211,30 @@
         <div class="form-text">Vacío = queda pausado hasta que alguien lo reactive.</div>
       </div>
       <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-warning">Pausar</button></div>
+    </form>
+  </div></div>
+</div>
+<div class="modal fade" id="modalEmail" tabindex="-1">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <form data-ajax action="{% url 'crm:oportunidad_accion' op.pk 'email' %}">
+      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-envelope"></i> Email a {{ contacto.nombre }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="small muted mb-2">Para: <b>{{ contacto.email }}</b> · las respuestas llegan a tu email{% if not user.email %} (cargalo en tu perfil){% endif %}.</div>
+        <label class="form-label">Asunto</label><input name="asunto" class="form-control mb-2" required>
+        <label class="form-label">Mensaje</label><textarea name="cuerpo" rows="8" class="form-control" required placeholder="Hola {primer_nombre}, …"></textarea>
+        <div class="form-text">Variables: {nombre} {primer_nombre} {agente}. Se registra en el historial y se mide si lo abre o hace clic en los links.</div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary"><i class="bi bi-send"></i> Enviar</button></div>
+    </form>
+  </div></div>
+</div>
+<div class="modal fade" id="modalSms" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form data-ajax action="{% url 'crm:oportunidad_accion' op.pk 'sms' %}">
+      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-phone"></i> SMS a {{ contacto.telefono }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body"><textarea name="texto" rows="4" maxlength="480" class="form-control" required placeholder="Hola {primer_nombre}, …"></textarea>
+        <div class="form-text">Hasta 160 caracteres es 1 SMS; más largo se cobra como varios.</div></div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Enviar</button></div>
     </form>
   </div></div>
 </div>

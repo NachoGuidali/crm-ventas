@@ -14,7 +14,7 @@
     <div class="col-12 t t-whatsapp"><label class="form-label">Plantilla</label>{{ form.plantilla }}{{ form.plantilla.errors }}<div class="form-text">{{ form.plantilla.help_text }}</div></div>
     <div class="col-12 t t-whatsapp"><label class="form-label">Línea</label>{{ form.linea }}<div class="form-text">{{ form.linea.help_text }}</div></div>
     <div class="col-12 t t-email"><label class="form-label">Asunto</label>{{ form.email_asunto }}</div>
-    <div class="col-12 t t-whatsapp t-email"><label class="form-label">Texto <span class="muted">(si no usás plantilla)</span></label>{{ form.texto }}{{ form.texto.errors }}<div class="form-text">{{ form.texto.help_text }}</div></div>
+    <div class="col-12 t t-whatsapp t-email t-sms"><label class="form-label">Texto <span class="muted">(si no usás plantilla)</span></label>{{ form.texto }}{{ form.texto.errors }}<div class="form-text">{{ form.texto.help_text }}</div></div>
     <div class="col-md-8 t t-tarea t-notif_agente t-notif_supervisores"><label class="form-label">Título de la tarea / aviso</label>{{ form.tarea_titulo }}</div>
     <div class="col-md-4 t t-tarea"><label class="form-label">Vence en (horas)</label>{{ form.tarea_vence_horas }}</div>
     <div class="col-md-6 t t-etapa"><label class="form-label">{{ form.mover_a.label }}</label>{{ form.mover_a }}{{ form.mover_a.errors }}</div>

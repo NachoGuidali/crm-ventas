@@ -611,17 +611,18 @@ class Actividad(models.Model):
     TIPO_REINGRESO = 'reingreso'
     TIPO_SISTEMA = 'sistema'
     TIPO_CAMBIO = 'cambio'
+    TIPO_SMS = 'sms'
     TIPO_CHOICES = [
         (TIPO_NOTA, 'Nota'), (TIPO_LLAMADA, 'Llamada'), (TIPO_WHATSAPP, 'WhatsApp'), (TIPO_EMAIL, 'Email'),
         (TIPO_ETAPA, 'Cambio de etapa'), (TIPO_ASIGNACION, 'Asignación'), (TIPO_INTENTO, 'Intento de contacto'),
         (TIPO_TAREA, 'Tarea'), (TIPO_PAUSA, 'Pausa / reactivación'), (TIPO_CIERRE, 'Cierre'),
-        (TIPO_REINGRESO, 'Reingreso del dato'), (TIPO_SISTEMA, 'Sistema'), (TIPO_CAMBIO, 'Cambio de datos'),
+        (TIPO_REINGRESO, 'Reingreso del dato'), (TIPO_SISTEMA, 'Sistema'), (TIPO_CAMBIO, 'Cambio de datos'), (TIPO_SMS, 'SMS'),
     ]
     ICONOS = {
         TIPO_NOTA: 'sticky', TIPO_LLAMADA: 'telephone', TIPO_WHATSAPP: 'whatsapp', TIPO_EMAIL: 'envelope',
         TIPO_ETAPA: 'arrow-right-circle', TIPO_ASIGNACION: 'person-check', TIPO_INTENTO: 'telephone-x',
         TIPO_TAREA: 'calendar-check', TIPO_PAUSA: 'pause-circle', TIPO_CIERRE: 'flag',
-        TIPO_REINGRESO: 'arrow-repeat', TIPO_SISTEMA: 'gear', TIPO_CAMBIO: 'pencil-square',
+        TIPO_REINGRESO: 'arrow-repeat', TIPO_SISTEMA: 'gear', TIPO_CAMBIO: 'pencil-square', TIPO_SMS: 'phone',
     }
 
     contacto = models.ForeignKey(Contacto, on_delete=models.CASCADE, related_name='actividades')

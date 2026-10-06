@@ -50,3 +50,29 @@ class LogIntegracion(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class ConfigSMS(models.Model):
+    """SMS por Twilio (único). Necesita un número de Twilio con SMS habilitado."""
+    activo = models.BooleanField(default=False)
+    account_sid = models.CharField(max_length=64, blank=True, verbose_name='Account SID')
+    auth_token = models.CharField(max_length=128, blank=True, verbose_name='Auth token')
+    numero = models.CharField(max_length=30, blank=True, verbose_name='Número remitente',
+                              help_text='El número de Twilio con SMS, en formato +1… / +54…, o un Messaging Service SID (MG…).')
+    webhook_token = models.CharField(max_length=40, blank=True, editable=False)
+
+    class Meta:
+        verbose_name = 'Configuración SMS'
+
+    @classmethod
+    def get(cls):
+        import secrets
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={'webhook_token': secrets.token_urlsafe(24)})
+        if not obj.webhook_token:
+            obj.webhook_token = secrets.token_urlsafe(24)
+            obj.save(update_fields=['webhook_token'])
+        return obj
+
+    @property
+    def operativo(self):
+        return self.activo and self.account_sid and self.auth_token and self.numero
