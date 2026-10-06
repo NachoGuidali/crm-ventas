@@ -240,6 +240,7 @@ def enviar_mensaje(conv, usuario=None, texto='', plantilla=None, valores=None, a
         if op:
             from apps.crm import services as crm
             crm.tocar(op)
+            crm.marcar_primer_contacto(op)
             crm.avanzar_desde_inicial(op, usuario)
     marcar_cambio_inbox()
     return mensaje

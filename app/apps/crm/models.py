@@ -93,6 +93,18 @@ class Embudo(models.Model):
     horario_hasta = models.TimeField(default='18:00')
     dias_habiles = models.JSONField(default=list, blank=True, help_text='0=lunes … 6=domingo')
     fuera_de_horario = models.CharField(max_length=10, choices=FUERA_HORARIO_CHOICES, default=FUERA_HORARIO_ENCOLAR)
+    SLA_AVISAR = 'avisar'
+    SLA_REASIGNAR = 'reasignar'
+    SLA_ACCIONES = [(SLA_AVISAR, 'Avisar al vendedor y a supervisión'),
+                    (SLA_REASIGNAR, 'Avisar y reasignar a otro vendedor')]
+    sla_minutos = models.PositiveIntegerField(
+        default=0, verbose_name='SLA de primer contacto (minutos)',
+        help_text='Tiempo máximo desde que se asigna el lead hasta la primera gestión (llamada, mensaje o intento). '
+                  '0 = sin SLA.')
+    sla_accion = models.CharField(max_length=10, choices=SLA_ACCIONES, default=SLA_AVISAR,
+                                  verbose_name='Si se vence el SLA')
+    sla_max_reasignaciones = models.PositiveSmallIntegerField(
+        default=1, verbose_name='Reasignar como máximo', help_text='Veces por lead (evita que dé vueltas).')
     crear_tarea_al_asignar = models.BooleanField(
         default=True, verbose_name='Crear tarea "Contactar prospecto" al asignar')
 
@@ -508,6 +520,10 @@ class Oportunidad(models.Model):
                                                help_text='Pausada hasta / fecha de recontacto.')
     motivo_pausa = models.CharField(max_length=200, blank=True)
     asignada_at = models.DateTimeField(null=True, blank=True)
+    primer_contacto_at = models.DateTimeField(null=True, blank=True, db_index=True,
+                                              help_text='Primera gestión del vendedor: llamada, mensaje o intento.')
+    sla_alerta_at = models.DateTimeField(null=True, blank=True, editable=False)
+    reasignaciones_sla = models.PositiveSmallIntegerField(default=0, editable=False)
     recordatorio_enviado_at = models.DateTimeField(null=True, blank=True, editable=False)
     alerta_estancado_at = models.DateTimeField(null=True, blank=True, editable=False)
 

@@ -23,6 +23,12 @@
       <div class="col-sm-6" id="boxSinConectados"><label class="form-label">{{ form.sin_conectados.label }}</label>{{ form.sin_conectados }}</div>
     </div>
     <div class="form-text">"Conectado" = tiene el CRM abierto (en cualquier pestaña) y está disponible. Se desconecta a los 4 minutos de cerrarlo o al salir. Las excepciones por origen se configuran abajo, en <a href="#reglas">Reglas por origen</a>.</div>
+    <div class="row g-2 mt-1">
+      <div class="col-sm-4"><label class="form-label">SLA primer contacto (min)</label>{{ form.sla_minutos }}</div>
+      <div class="col-sm-5"><label class="form-label">{{ form.sla_accion.label }}</label>{{ form.sla_accion }}</div>
+      <div class="col-sm-3"><label class="form-label">Máx. reasignaciones</label>{{ form.sla_max_reasignaciones }}</div>
+    </div>
+    <div class="form-text">{{ form.sla_minutos.help_text }} Se cuenta desde la asignación; fuera del horario de atención no se reasigna.</div>
     <label class="d-flex gap-2 mt-2 small">{{ form.crear_tarea_al_asignar }} {{ form.crear_tarea_al_asignar.label }}</label>
     <label class="d-flex gap-2 mt-2 small">{{ form.respetar_horario }} {{ form.respetar_horario.label }}</label>
     <div class="row g-2 mt-1">

@@ -158,7 +158,7 @@ Los datos extra de cada importación se guardan igual (`datos_extra`) y se muest
 ```bash
 cd app && DJANGO_SETTINGS_MODULE=config.settings.test python manage.py test apps
 ```
-111 tests: normalización de teléfonos, deduplicación (1000 ingresos con repetidos), asignación, cierres con
+117 tests: normalización de teléfonos, deduplicación (1000 ingresos con repetidos), asignación, cierres con
 tipificación, postergaciones, importación, webhooks de los 3 proveedores (firma de Meta, idempotencia),
 ventana de 24 h, Anura (entrantes, idempotencia, click2call unificado, discador), automatizaciones, recupero de
 contraseña, bloqueo de login, permisos, API, campos personalizados y obligatorios por etapa.

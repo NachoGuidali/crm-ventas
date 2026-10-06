@@ -219,7 +219,8 @@ class EmbudoForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = Embudo
         fields = ['nombre', 'descripcion', 'color', 'activo', 'orden', 'agentes', 'supervisores', 'modo_asignacion',
-                  'asignar_entre', 'sin_conectados', 'respetar_horario', 'horario_desde', 'horario_hasta', 'fuera_de_horario', 'crear_tarea_al_asignar',
+                  'asignar_entre', 'sin_conectados', 'sla_minutos', 'sla_accion', 'sla_max_reasignaciones',
+                  'respetar_horario', 'horario_desde', 'horario_hasta', 'fuera_de_horario', 'crear_tarea_al_asignar',
                   'linea_whatsapp', 'max_intentos_sin_respuesta', 'dias_inactividad_recordatorio',
                   'dias_estancado_alerta', 'notificar_venta_supervisores', 'reingreso_perdidos']
         widgets = {

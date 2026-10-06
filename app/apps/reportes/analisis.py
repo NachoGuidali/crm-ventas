@@ -148,3 +148,40 @@ COLUMNAS_ACTIVIDAD = [
     ('llamadas_atendidas', 'Atendidas'), ('minutos', 'Minutos'), ('promedio_seg', 'Duración prom. (s)'),
     ('intentos', 'Intentos'), ('notas', 'Notas'), ('etapas', 'Cambios de etapa'), ('tareas', 'Tareas completadas'),
 ]
+
+
+def sla(embudo, ini, fin, agente=None):
+    """De los leads asignados en el período (en embudos con SLA): cuántos tuvieron la primera gestión a tiempo."""
+    from datetime import timedelta
+    from django.db.models import Avg, DurationField, ExpressionWrapper, F
+    from django.utils import timezone
+    from apps.crm.models import Embudo, Oportunidad
+    from apps.crm.services import q_sla_vencido
+    embudos = [embudo] if embudo is not None else list(Embudo.objects.filter(sla_minutos__gt=0))
+    embudos = [e for e in embudos if e and e.sla_minutos]
+    if not embudos:
+        return None
+    ahora = timezone.now()
+    dentro = fuera = pendientes = 0
+    for e in embudos:
+        limite = F('asignada_at') + timedelta(minutes=e.sla_minutos)
+        ops = Oportunidad.objects.filter(embudo=e, asignada_at__range=(ini, fin))
+        if agente is not None:
+            ops = ops.filter(agente=agente)
+        dentro += ops.filter(primer_contacto_at__lte=limite).count()
+        fuera += ops.filter(primer_contacto_at__gt=limite).count()
+        fuera += ops.filter(primer_contacto_at__isnull=True, asignada_at__lt=ahora - timedelta(minutes=e.sla_minutos)).count()
+        pendientes += ops.filter(primer_contacto_at__isnull=True,
+                                 asignada_at__gte=ahora - timedelta(minutes=e.sla_minutos)).count()
+    base = Oportunidad.objects.filter(embudo__in=embudos, asignada_at__range=(ini, fin), primer_contacto_at__isnull=False,
+                                      primer_contacto_at__gte=F('asignada_at'))
+    if agente is not None:
+        base = base.filter(agente=agente)
+    prom = base.aggregate(t=Avg(ExpressionWrapper(F('primer_contacto_at') - F('asignada_at'),
+                                                  output_field=DurationField())))['t']
+    vencidos = Oportunidad.objects.filter(q_sla_vencido(ahora), embudo__in=embudos)
+    if agente is not None:
+        vencidos = vencidos.filter(agente=agente)
+    return {'minutos': embudos[0].sla_minutos if len(embudos) == 1 else None, 'dentro': dentro, 'fuera': fuera,
+            'pendientes': pendientes, 'pct': _pct(dentro, dentro + fuera),
+            'promedio_min': round(prom.total_seconds() / 60) if prom else None, 'vencidos_ahora': vencidos.count()}

@@ -169,6 +169,7 @@ class DashboardView(PermisoRequeridoMixin, View):
 
         from . import analisis
         return render(request, 'reportes/dashboard.html', {
+            'sla': analisis.sla(embudo, ini, fin),
             'unicos': analisis.leads_unicos(embudo, ini, fin), 'conversion': analisis.embudo_conversion(embudo, ini, fin),
             'pipeline': analisis.matriz_pipeline(embudo), 'actividad': analisis.actividad_vendedoras(ini, fin),
             'columnas_actividad': analisis.COLUMNAS_ACTIVIDAD,
@@ -230,6 +231,7 @@ class MisNumerosView(LoginRequiredMixin, View):
         actividad = analisis.actividad_vendedoras(ini, fin, agentes=[agente])
         return render(request, 'reportes/mis_numeros.html', {
             'agente': agente, 'embudo': embudo, 'embudos': embudos, 'p': p, 'desde': desde, 'hasta': hasta,
+            'sla': analisis.sla(embudo, ini, fin, agente),
             'm': metricas(embudo, ini, fin, agente=agente), 'unicos': analisis.leads_unicos(embudo, ini, fin, agente),
             'conversion': analisis.embudo_conversion(embudo, ini, fin, agente),
             'pipeline': analisis.matriz_pipeline(embudo, agente),

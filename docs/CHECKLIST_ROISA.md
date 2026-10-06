@@ -45,7 +45,7 @@ Fuente: "CHECKLIST DE REQUERIMIENTOS CRM – BAMINDS.docx" (06/10/2026). Leyenda
 
 1. ✅ **Reportes con datos existentes** (hecho 06/10): actividad por vendedora, embudo de conversión, matriz
    vendedora × etapa, leads únicos, contador de ingresos, "Mis números", refresco automático.
-2. **SLA** (1 día): definición por embudo, reporte, reasignación automática, alerta.
+2. ✅ **SLA** (hecho 06/10): definición por embudo, reporte, reasignación automática, alerta.
 3. **Automatizaciones por respuesta e inactividad** (1,5 días).
 4. **Calidad de envíos** (1,5–2 días).
 5. **Métricas de call center** (1 día): tiempo conectado, after call work.

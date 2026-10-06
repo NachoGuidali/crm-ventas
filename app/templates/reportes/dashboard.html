@@ -43,6 +43,14 @@
   <div class="col-6 col-md-3"><div class="kpi {% if m.tareas_vencidas %}alerta{% endif %}"><div class="v">{{ m.tareas_vencidas }}</div><div class="l">Tareas vencidas del equipo</div></div></div>
 </div>
 
+{% if sla %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="kpi {% if sla.vencidos_ahora %}alerta{% endif %}"><div class="v"><a href="{% url 'crm:oportunidades' %}?embudo={{ embudo.pk|default:'todos' }}&sla=vencido{% if agente %}&agente={{ agente.pk }}{% endif %}">{{ sla.vencidos_ahora }}</a></div><div class="l">Fuera de SLA ahora (sin contactar)</div></div></div>
+  <div class="col-6 col-md-3"><div class="kpi"><div class="v">{{ sla.pct }}%</div><div class="l">Contactados dentro del SLA{% if sla.minutos %} ({{ sla.minutos }} min){% endif %}</div><div class="d">{{ sla.dentro }} a tiempo · {{ sla.fuera }} fuera</div></div></div>
+  <div class="col-6 col-md-3"><div class="kpi"><div class="v">{% if sla.promedio_min is not None %}{{ sla.promedio_min }} min{% else %}—{% endif %}</div><div class="l">Promedio hasta la primera gestión</div></div></div>
+  <div class="col-6 col-md-3"><div class="kpi"><div class="v">{{ sla.pendientes }}</div><div class="l">Asignados, todavía en plazo</div></div></div>
+</div>
+{% endif %}
 <div class="row g-3 mb-3 viz-root">
   <div class="col-lg-7"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center">
       <span>Ingresos y ventas por día</span>

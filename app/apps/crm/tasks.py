@@ -69,3 +69,9 @@ def accion_masiva(self, user_id, accion, ids, datos):
     detalle = '; '.join(resultado['errores'][:5])
     notificar(user, 'sistema', masivas.resumen(accion, resultado), detalle[:500], '/oportunidades/')
     return {'hechos': resultado['hechos'], 'errores': len(resultado['errores'])}
+
+
+@shared_task(name='crm.revisar_sla')
+def revisar_sla():
+    from .services import revisar_sla as revisar
+    return revisar()

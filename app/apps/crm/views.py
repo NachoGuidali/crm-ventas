@@ -249,7 +249,7 @@ def _chips_filtros(request, etapas, tipificaciones):
         rango = f'{request.GET.get("desde") or "…"} → {request.GET.get("hasta") or "…"}'
         chips.append((f'{campo_fecha}: {rango}', params.urlencode()))
     for clave, texto in (('q', 'Búsqueda'), ('origen_pauta', 'Origen de pauta:'), ('intentos_min', 'Intentos ≥'), ('intentos_max', 'Intentos ≤'), ('ingresos_min', 'Ingresó ≥ veces:'),
-                         ('sin_actividad', 'Sin actividad (días) ≥'), ('estancados', 'Estancados')):
+                         ('sin_actividad', 'Sin actividad (días) ≥'), ('estancados', 'Estancados'), ('sla', 'SLA:')):
         if request.GET.get(clave):
             params = request.GET.copy()
             params.pop(clave, None)
@@ -1099,6 +1099,7 @@ class SupervisionView(PermisoRequeridoMixin, View):
         return render(request, 'crm/supervision.html', {
             'embudo': embudo, 'embudos': embudos, 'filas': filas,
             'sin_asignar': ops.filter(agente__isnull=True, estado=Oportunidad.ESTADO_ABIERTA).count(),
+            'sla_vencidos': ops.filter(crm.q_sla_vencido()).count() if embudo and embudo.sla_minutos else None,
             'wa_sin_asignar': Conversacion.objects.filter(agente__isnull=True, archivada=False).exclude(
                 estado=Conversacion.ESTADO_CERRADA).count(),
             'estancados': ops.filter(estado=Oportunidad.ESTADO_ABIERTA, etapa__tipo=Etapa.TIPO_NORMAL,

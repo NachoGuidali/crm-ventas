@@ -671,3 +671,41 @@ class PaseEntreEmbudosTests(BaseCRM):
         self.assertFalse(f.is_valid())
         self.assertIn('modo_embudo', f.errors)
         self.assertIn('usuario_destino', f.errors)
+
+
+class SLATests(BaseCRM):
+    def setUp(self):
+        super().setUp()
+        Embudo.objects.filter(pk=self.embudo.pk).update(sla_minutos=30, sla_accion=Embudo.SLA_REASIGNAR,
+                                                       sla_max_reasignaciones=1)
+        self.embudo.refresh_from_db()
+
+    def test_vencido_se_avisa_y_reasigna_una_sola_vez(self):
+        op = crm.ingresar_prospecto({'telefono': '1170000001', 'nombre': 'S'}, self.embudo, 'web').oportunidad
+        primero = op.agente
+        Oportunidad.objects.filter(pk=op.pk).update(asignada_at=timezone.now() - timedelta(minutes=40))
+        self.assertEqual(crm.revisar_sla()['reasignadas'], 1)
+        op.refresh_from_db()
+        self.assertNotEqual(op.agente, primero)
+        self.assertEqual(op.reasignaciones_sla, 1)
+        self.assertTrue(op.actividades.filter(texto__startswith='SLA de primer contacto vencido').exists())
+        # El segundo también se pasa (40 min después de la reasignación): solo avisa (tope de reasignaciones)
+        Oportunidad.objects.filter(pk=op.pk).update(asignada_at=timezone.now() - timedelta(minutes=40),
+                                                    sla_alerta_at=timezone.now() - timedelta(minutes=45))
+        r = crm.revisar_sla()
+        self.assertEqual((r['vencidos'], r['reasignadas']), (1, 0))
+        self.assertEqual(crm.revisar_sla()['vencidos'], 0)  # no repite el aviso
+
+    def test_primer_contacto_cumple_el_sla_y_reporte(self):
+        from apps.reportes import analisis
+        a = crm.ingresar_prospecto({'telefono': '1170000002', 'nombre': 'A'}, self.embudo, 'web').oportunidad
+        b = crm.ingresar_prospecto({'telefono': '1170000003', 'nombre': 'B'}, self.embudo, 'web').oportunidad
+        crm.registrar_intento(a, a.agente)
+        Oportunidad.objects.filter(pk=b.pk).update(asignada_at=timezone.now() - timedelta(minutes=40))
+        a.refresh_from_db()
+        self.assertIsNotNone(a.primer_contacto_at)
+        r = analisis.sla(self.embudo, timezone.now() - timedelta(days=1), timezone.now() + timedelta(minutes=1))
+        self.assertEqual((r['dentro'], r['fuera'], r['vencidos_ahora'], r['pct']), (1, 1, 1, 50.0))
+        self.client.force_login(self.sup)
+        lista = self.client.get('/oportunidades/', {'embudo': self.embudo.pk, 'sla': 'vencido'})
+        self.assertEqual([o.pk for o in lista.context['page']], [b.pk])

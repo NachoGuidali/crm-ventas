@@ -538,6 +538,8 @@ def mover_etapa(op: Oportunidad, etapa: Etapa, usuario=None, tipificacion: Tipif
             oportunidad=op, etapa_anterior=anterior, etapa_nueva=etapa, estado_anterior=estado_anterior,
             estado_nuevo=op.estado, usuario=usuario, nota=(nota or '')[:300], segundos_en_etapa_anterior=segundos,
         )
+        if usuario is not None and not automatico:
+            marcar_primer_contacto(op, ahora)
         texto = f'{anterior} → {etapa}'
         if tipificacion:
             texto += f' · {tipificacion.categoria + ": " if tipificacion.categoria else ""}{tipificacion}'
@@ -777,6 +779,57 @@ def reanudar(op, usuario=None, automatico=False):
     return True
 
 
+def q_sla_vencido(ahora=None):
+    """Leads abiertos, asignados y sin primera gestión cuyo SLA ya pasó (según el SLA de su embudo)."""
+    ahora = ahora or timezone.now()
+    q = Q(pk__in=[])
+    for emb_id, minutos in Embudo.objects.filter(sla_minutos__gt=0).values_list('pk', 'sla_minutos'):
+        q |= Q(embudo_id=emb_id, asignada_at__lt=ahora - timedelta(minutes=minutos))
+    return q & Q(estado=Oportunidad.ESTADO_ABIERTA, agente__isnull=False, primer_contacto_at__isnull=True)
+
+
+def revisar_sla():
+    """Cada 2 min: avisa (y si el embudo lo pide, reasigna) los leads que pasaron el SLA sin primera gestión."""
+    from apps.users.services import notificar, notificar_varios, supervisores_de
+    ahora = timezone.now()
+    vencidos = (Oportunidad.objects.filter(q_sla_vencido(ahora))
+                .filter(Q(sla_alerta_at__isnull=True) | Q(sla_alerta_at__lt=F('asignada_at')))
+                .select_related('embudo', 'agente', 'contacto')[:500])
+    por_embudo, reasignadas = {}, 0
+    for op in vencidos:
+        embudo = op.embudo
+        if not embudo.en_horario():
+            continue  # fuera de horario no se reasigna ni se avisa: se revisa al abrir
+        Oportunidad.objects.filter(pk=op.pk).update(sla_alerta_at=ahora)
+        anterior = op.agente
+        notificar(anterior, 'sla', f'SLA vencido: {op.contacto.nombre}',
+                  f'Pasaron {embudo.sla_minutos} min sin contactarlo.', op.get_absolute_url())
+        texto = f'SLA de primer contacto vencido ({embudo.sla_minutos} min) con {anterior.display_name}.'
+        if embudo.sla_accion == Embudo.SLA_REASIGNAR and op.reasignaciones_sla < embudo.sla_max_reasignaciones:
+            nuevo = elegir_y_reasignar(op, excluir=[anterior], usuario=None)
+            if nuevo:
+                Oportunidad.objects.filter(pk=op.pk).update(reasignaciones_sla=F('reasignaciones_sla') + 1)
+                texto += f' Se reasignó a {nuevo.display_name}.'
+                reasignadas += 1
+        Actividad.objects.create(contacto_id=op.contacto_id, oportunidad=op, tipo=Actividad.TIPO_ASIGNACION, texto=texto,
+                                 datos={'sla': True})
+        por_embudo.setdefault(embudo, []).append(op)
+    for embudo, ops in por_embudo.items():
+        notificar_varios(supervisores_de(embudo), 'sla',
+                         f'{len(ops)} lead{"s" if len(ops) > 1 else ""} fuera de SLA en {embudo}',
+                         f'Sin contactar a los {embudo.sla_minutos} min de asignados.',
+                         f'/oportunidades/?embudo={embudo.pk}&sla=vencido')
+    return {'vencidos': sum(len(v) for v in por_embudo.values()), 'reasignadas': reasignadas}
+
+
+def marcar_primer_contacto(op, momento=None):
+    """Primera gestión del vendedor sobre el lead (para el SLA). Solo la primera vez."""
+    if op is None:
+        return
+    Oportunidad.objects.filter(pk=op.pk, primer_contacto_at__isnull=True).update(
+        primer_contacto_at=momento or timezone.now())
+
+
 def registrar_intento(op, usuario, canal='llamada', resultado='sin_respuesta', nota='', crear_actividad=True):
     """
     Registra un intento de contacto. Si el prospecto estaba en la primera etapa pasa solo a la
@@ -787,6 +840,7 @@ def registrar_intento(op, usuario, canal='llamada', resultado='sin_respuesta', n
         intentos_contacto=F('intentos_contacto') + 1, ultimo_intento_at=ahora, ultima_actividad_at=ahora,
     )
     op.refresh_from_db(fields=['intentos_contacto', 'ultimo_intento_at', 'ultima_actividad_at'])
+    marcar_primer_contacto(op, ahora)
     etiquetas = {'sin_respuesta': 'sin respuesta', 'ocupado': 'ocupado', 'buzon': 'buzón de voz',
                  'numero_erroneo': 'número erróneo', 'contactado': 'contactado'}
     if crear_actividad:
@@ -990,6 +1044,8 @@ def filtrar_oportunidades(qs, params, user):
                           ('ingresos_min', 'ingresos__gte')):
         if str(params.get(clave) or '').isdigit():
             qs = qs.filter(**{lookup: int(params[clave])})
+    if params.get('sla') == 'vencido':
+        qs = qs.filter(q_sla_vencido())
     if params.get('sin_actividad'):
         try:
             dias = int(params['sin_actividad'])
