@@ -62,6 +62,11 @@
       <a href="{% url 'reportes:dashboard' %}" class="nav-item {% if seccion == 'reportes' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-bar-chart-line"></i></span> Dashboard
       </a>
+      {% if 'reportes' in perms_crm or 'automatizaciones' in perms_crm %}
+      <a href="{% url 'reportes:calidad_envios' %}" class="nav-item {% if url_name == 'calidad_envios' %}active{% endif %}">
+        <span class="nav-icon"><i class="bi bi-send-check"></i></span> Calidad de envíos
+      </a>
+      {% endif %}
       {% endif %}
       {% if 'pautas' in perms_crm or 'reportes' in perms_crm %}
       <a href="{% url 'pautas:analisis' %}" class="nav-item {% if seccion == 'pautas' %}active{% endif %}">

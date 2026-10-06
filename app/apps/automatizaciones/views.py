@@ -153,3 +153,40 @@ class EjecucionesView(PermisoRequeridoMixin, View):
             'page': paginar(request, qs, 50), 'estados': EjecucionAccion.ESTADO_CHOICES, 'filtros': request.GET,
             'query': query_sin_page(request),
         })
+
+
+_GIF = (b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,'
+        b'\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;')
+
+
+def email_abierto(request, token):
+    """Píxel de apertura (público). Los clientes de correo que bloquean imágenes no cuentan."""
+    from django.db.models import F
+    from django.http import HttpResponse
+    from django.utils import timezone
+    from .models import EmailEnviado
+    EmailEnviado.objects.filter(token=token).update(aperturas=F('aperturas') + 1)
+    EmailEnviado.objects.filter(token=token, abierto_at__isnull=True).update(abierto_at=timezone.now())
+    resp = HttpResponse(_GIF, content_type='image/gif')
+    resp['Cache-Control'] = 'no-store'
+    return resp
+
+
+def email_clic(request, token):
+    """Link redirigido (público): registra el clic y lleva a la URL original (firmada, no es un redirect abierto)."""
+    from django.core import signing
+    from django.db.models import F
+    from django.http import Http404, HttpResponseRedirect
+    from django.utils import timezone
+    from .models import EmailEnviado
+    try:
+        url = signing.loads(request.GET.get('u', ''), salt='email-clic')
+    except signing.BadSignature:
+        raise Http404
+    if not str(url).startswith(('http://', 'https://')):
+        raise Http404
+    ahora = timezone.now()
+    EmailEnviado.objects.filter(token=token).update(clics=F('clics') + 1)
+    EmailEnviado.objects.filter(token=token, clic_at__isnull=True).update(clic_at=ahora)
+    EmailEnviado.objects.filter(token=token, abierto_at__isnull=True).update(abierto_at=ahora)  # si hizo clic, lo abrió
+    return HttpResponseRedirect(url)

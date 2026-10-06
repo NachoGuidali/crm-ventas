@@ -88,3 +88,58 @@ class ReportesComercialesTests(TestCase):
         self.assertEqual(r.context['agente'], self.ana)
         self.client.force_login(self.jefa)
         self.assertEqual(self.client.get('/reportes/mis-numeros/', {'agente': self.beto.pk}).context['agente'], self.beto)
+
+
+class CalidadEnviosTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command('setup_inicial', '--sin-admin', verbosity=0)
+        cls.embudo = Embudo.objects.get()
+        cls.ana = User.objects.create_user('ana', password='x')
+        cls.embudo.agentes.set([cls.ana])
+        cls.jefa = User.objects.create_user('jefa', password='x', rol=User.ROL_ADMIN)
+
+    def test_respuesta_por_automatizacion_y_plantilla(self):
+        from apps.automatizaciones.models import AccionEtapa
+        from apps.whatsapp.models import Conversacion, LineaWhatsApp, Mensaje, Plantilla
+        etapa = self.embudo.etapa_inicial
+        acc = AccionEtapa.objects.create(embudo=self.embudo, etapa=etapa, nombre='Bienvenida', tipo='whatsapp', texto='Hola')
+        linea = LineaWhatsApp.objects.create(nombre='L', proveedor='demo')
+        p = Plantilla.objects.first()
+        ahora = timezone.now() - timedelta(hours=5)
+        for i, responde in enumerate([True, False, False, True]):
+            op = crm.ingresar_prospecto({'telefono': f'11900000{i:02d}', 'nombre': 'X'}, self.embudo, 'web').oportunidad
+            conv = Conversacion.objects.create(linea=linea, telefono=op.contacto.telefono, contacto=op.contacto)
+            Mensaje.objects.create(conversacion=conv, direccion='out', contenido='Hola', automatico=True, accion=acc,
+                                   plantilla=p, status='read' if i < 3 else 'delivered', timestamp=ahora)
+            if responde:
+                Mensaje.objects.create(conversacion=conv, direccion='in', contenido='sí', timestamp=ahora + timedelta(hours=1))
+        c = analisis.calidad_envios(timezone.now() - timedelta(days=1), timezone.now())
+        fila = c['automatizaciones'][0]
+        self.assertEqual((fila['nombre'], fila['n'], fila['respondidos'], fila['pct_respondidos'], fila['pct_leidos']),
+                         ('Bienvenida', 4, 2, 50.0, 75.0))
+        self.assertEqual(c['plantillas'][0]['respondidos'], 2)
+        self.client.force_login(self.jefa)
+        self.assertContains(self.client.get('/reportes/envios/'), 'Bienvenida')
+
+    def test_email_apertura_y_clic(self):
+        import re
+        from django.core import mail
+        from apps.automatizaciones.models import AccionEtapa, EmailEnviado
+        from apps.automatizaciones.services import _correr
+        op = crm.ingresar_prospecto({'telefono': '1190000100', 'nombre': 'Mail', 'email': 'a@b.com'}, self.embudo, 'web').oportunidad
+        acc = AccionEtapa.objects.create(embudo=self.embudo, etapa=op.etapa, nombre='Mail info', tipo='email',
+                                         email_asunto='Info', texto='Mirá https://supregsolutions.com/plan')
+        self.assertEqual(_correr(acc, op)[0], 'ejecutada')
+        html = mail.outbox[-1].alternatives[0][0]
+        envio = EmailEnviado.objects.get()
+        self.assertIn(f'/e/o/{envio.token}.gif', html)
+        link = re.search(r'href="[^"]*(/e/c/[^"]+)"', html).group(1).replace('&amp;', '&')
+        self.client.get(f'/e/o/{envio.token}.gif')
+        r = self.client.get(link)
+        self.assertEqual((r.status_code, r['Location']), (302, 'https://supregsolutions.com/plan'))
+        envio.refresh_from_db()
+        self.assertEqual((envio.aperturas, envio.clics, envio.abierto_at is not None), (1, 1, True))
+        self.assertEqual(self.client.get(f'/e/c/{envio.token}/?u=https://malo.com').status_code, 404)
+        c = analisis.calidad_envios(timezone.now() - timedelta(days=1), timezone.now() + timedelta(minutes=1))
+        self.assertEqual((c['emails'][0]['abiertos'], c['emails'][0]['clics']), (1, 1))

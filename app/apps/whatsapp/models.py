@@ -219,6 +219,8 @@ class Mensaje(models.Model):
     plantilla = models.ForeignKey('Plantilla', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     plantilla_valores = models.JSONField(default=list, blank=True)
     automatico = models.BooleanField(default=False)
+    accion = models.ForeignKey('automatizaciones.AccionEtapa', null=True, blank=True, on_delete=models.SET_NULL,
+                               related_name='mensajes', help_text='Automatización que lo envió (para medir respuesta).')
     timestamp = models.DateTimeField(default=timezone.now)
 
     class Meta:

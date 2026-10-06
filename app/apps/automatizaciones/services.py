@@ -8,9 +8,25 @@ from django.db.models import Exists, F, OuterRef
 from django.utils import timezone
 from django.utils.html import escape, linebreaks
 
-from .models import AccionEtapa, EjecucionAccion
+import secrets
+
+from .models import AccionEtapa, EjecucionAccion, EmailEnviado
 
 logger = logging.getLogger('apps.automatizaciones')
+
+
+def html_con_seguimiento(cuerpo, token):
+    """Cuerpo del email en HTML con los links redirigidos (clics) y un píxel invisible (aperturas)."""
+    import re
+    from django.core import signing
+    from django.utils.html import urlize
+    base = settings.SITE_URL
+
+    def redirigir(m):
+        firmado = signing.dumps(m.group(1), salt='email-clic')
+        return f'href="{base}/e/c/{token}/?u={firmado}"'
+    html = re.sub(r'href="(https?://[^"]+)"', redirigir, urlize(linebreaks(escape(cuerpo))))
+    return html + f'<img src="{base}/e/o/{token}.gif" width="1" height="1" alt="" style="display:block;border:0">'
 
 
 def proxima_apertura(embudo, momento):
@@ -179,7 +195,8 @@ def _correr(accion, op, ejec_desde=None):
     contacto = op.contacto
     if accion.tipo == AccionEtapa.TIPO_WHATSAPP:
         from apps.whatsapp.services import enviar_automatico
-        msg, detalle = enviar_automatico(op, plantilla=accion.plantilla, texto=accion.texto, linea=accion.linea)
+        msg, detalle = enviar_automatico(op, plantilla=accion.plantilla, texto=accion.texto, linea=accion.linea,
+                                         accion=accion)
         return (E.ESTADO_EJECUTADA if msg else E.ESTADO_OMITIDA), detalle
 
     if accion.tipo == AccionEtapa.TIPO_EMAIL:
@@ -187,8 +204,10 @@ def _correr(accion, op, ejec_desde=None):
             return E.ESTADO_OMITIDA, 'Sin email o contacto marcado como "no contactar".'
         cuerpo = reemplazar_variables_texto(accion.texto, contacto, op)
         asunto = reemplazar_variables_texto(accion.email_asunto or op.embudo.nombre, contacto, op)
+        envio = EmailEnviado.objects.create(accion=accion, oportunidad=op, contacto=contacto, para=contacto.email,
+                                            asunto=asunto[:200], token=secrets.token_urlsafe(24))
         mail = EmailMultiAlternatives(asunto, cuerpo, settings.DEFAULT_FROM_EMAIL, [contacto.email])
-        mail.attach_alternative(linebreaks(escape(cuerpo)), 'text/html')
+        mail.attach_alternative(html_con_seguimiento(cuerpo, envio.token), 'text/html')
         mail.send(fail_silently=False)
         Actividad.objects.create(contacto=contacto, oportunidad=op, tipo=Actividad.TIPO_EMAIL,
                                  texto=f'Email automático: {asunto}\n{cuerpo[:500]}')

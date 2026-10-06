@@ -5,12 +5,15 @@ from django.urls import include, path, re_path
 from core.views import media_protegida
 
 from apps.integraciones.urls import api_urlpatterns as api_integraciones
+from apps.automatizaciones import views as auto_views
 from apps.reportes import views as reportes_views
 from apps.telefonia.urls import api_urlpatterns as api_telefonia
 
 urlpatterns = [
     path('', reportes_views.inicio, name='inicio'),
     path('pulso/', reportes_views.PulsoView.as_view(), name='pulso'),
+    path('e/o/<str:token>.gif', auto_views.email_abierto, name='email_abierto'),
+    path('e/c/<str:token>/', auto_views.email_clic, name='email_clic'),
     path('admin/', admin.site.urls),
     path('usuarios/', include('apps.users.urls')),
     path('reportes/', include('apps.reportes.urls')),

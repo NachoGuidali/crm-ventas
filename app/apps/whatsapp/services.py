@@ -266,7 +266,7 @@ def _oportunidad_de(contacto):
     return oportunidad_activa_de(contacto)
 
 
-def enviar_automatico(oportunidad, plantilla=None, texto='', linea=None):
+def enviar_automatico(oportunidad, plantilla=None, texto='', linea=None, accion=None):
     """
     Mensaje disparado por una automatización. Respeta 'no contactar', la ventana de 24 h
     (si no hay plantilla y la ventana está cerrada, no se envía) y el ritmo anti-bloqueo de la línea.
@@ -292,6 +292,8 @@ def enviar_automatico(oportunidad, plantilla=None, texto='', linea=None):
         msg = enviar_mensaje(conv, texto=texto, plantilla=plantilla, automatico=True, demora_segundos=demora)
     except ErrorEnvio as e:
         return None, f'Omitido: {e}'
+    if accion is not None:
+        Mensaje.objects.filter(pk=msg.pk).update(accion=accion)
     return msg, f'Encolado por {linea}' + (f' (sale en {int(demora)} s)' if demora > 1 else '')
 
 

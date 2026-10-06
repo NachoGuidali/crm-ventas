@@ -83,3 +83,8 @@ def pesos(valor, decimales=None):
 def split_pares(texto):
     """'a:A,b:B' → [('a', 'A'), ('b', 'B')] (para armar botones en plantillas)."""
     return [tuple(p.split(':', 1)) for p in str(texto).split(',') if ':' in p]
+
+
+@register.filter
+def split_pares_simple(texto):
+    return [p.strip() for p in str(texto).split(',') if p.strip()]

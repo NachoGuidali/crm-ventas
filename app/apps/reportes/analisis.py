@@ -185,3 +185,51 @@ def sla(embudo, ini, fin, agente=None):
     return {'minutos': embudos[0].sla_minutos if len(embudos) == 1 else None, 'dentro': dentro, 'fuera': fuera,
             'pendientes': pendientes, 'pct': _pct(dentro, dentro + fuera),
             'promedio_min': round(prom.total_seconds() / 60) if prom else None, 'vencidos_ahora': vencidos.count()}
+
+
+def calidad_envios(ini, fin, horas_respuesta=48, dias_avance=7):
+    """
+    Respuesta a los envíos (WhatsApp automáticos y plantillas; emails automáticos): entregados, leídos, respondidos
+    en las N horas siguientes y tarjetas que cambiaron de etapa en los N días siguientes.
+    """
+    from datetime import timedelta
+    from django.db.models import Exists, OuterRef
+    from apps.automatizaciones.models import EmailEnviado
+    from apps.crm.models import HistorialEtapa
+    from apps.whatsapp.models import Mensaje
+    respuesta = Mensaje.objects.filter(conversacion=OuterRef('conversacion'), direccion=Mensaje.DIR_ENTRANTE,
+                                       timestamp__gt=OuterRef('timestamp'),
+                                       timestamp__lte=OuterRef('timestamp') + timedelta(hours=horas_respuesta))
+    avance = HistorialEtapa.objects.filter(oportunidad__contacto=OuterRef('conversacion__contacto'),
+                                           etapa_anterior__isnull=False, created_at__gt=OuterRef('timestamp'),
+                                           created_at__lte=OuterRef('timestamp') + timedelta(days=dias_avance))
+    base = (Mensaje.objects.filter(direccion=Mensaje.DIR_SALIENTE, timestamp__range=(ini, fin))
+            .filter(Q(automatico=True) | Q(plantilla__isnull=False))
+            .annotate(resp=Exists(respuesta), avanzo=Exists(avance)))
+    medidas = dict(n=Count('pk'), entregados=Count('pk', filter=Q(status__in=[Mensaje.STATUS_ENTREGADO, Mensaje.STATUS_LEIDO])),
+                   leidos=Count('pk', filter=Q(status=Mensaje.STATUS_LEIDO)),
+                   fallidos=Count('pk', filter=Q(status=Mensaje.STATUS_FALLIDO)),
+                   respondidos=Count('pk', filter=Q(resp=True)), avanzaron=Count('pk', filter=Q(avanzo=True)))
+
+    def filas(qs, campos, nombre):
+        out = []
+        for r in qs.values(*campos).annotate(**medidas).order_by('-n'):
+            r.update(nombre=nombre(r), pct_entregados=_pct(r['entregados'], r['n']), pct_leidos=_pct(r['leidos'], r['n']),
+                     pct_respondidos=_pct(r['respondidos'], r['n']), pct_avanzaron=_pct(r['avanzaron'], r['n']))
+            out.append(r)
+        return out
+
+    por_automatizacion = filas(base.filter(automatico=True), ['accion', 'accion__nombre', 'accion__embudo__nombre',
+                                                              'accion__etapa__nombre'],
+                               lambda r: r['accion__nombre'] or 'Automático (sin automatización registrada)')
+    por_plantilla = filas(base.filter(plantilla__isnull=False), ['plantilla', 'plantilla__nombre'],
+                          lambda r: r['plantilla__nombre'])
+    emails = []
+    for r in (EmailEnviado.objects.filter(enviado_at__range=(ini, fin))
+              .values('accion', 'accion__nombre').annotate(n=Count('pk'), abiertos=Count('pk', filter=Q(abierto_at__isnull=False)),
+                                                           clics=Count('pk', filter=Q(clic_at__isnull=False))).order_by('-n')):
+        r.update(nombre=r['accion__nombre'] or 'Email automático', pct_abiertos=_pct(r['abiertos'], r['n']),
+                 pct_clics=_pct(r['clics'], r['n']))
+        emails.append(r)
+    return {'automatizaciones': por_automatizacion, 'plantillas': por_plantilla, 'emails': emails,
+            'horas_respuesta': horas_respuesta, 'dias_avance': dias_avance}

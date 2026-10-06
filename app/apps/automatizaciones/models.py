@@ -157,3 +157,21 @@ class EjecucionAccion(models.Model):
             models.UniqueConstraint(fields=['accion', 'historial'], name='ejecucion_unica_por_entrada'),
         ]
         indexes = [models.Index(fields=['estado', 'programada_para'])]
+
+
+class EmailEnviado(models.Model):
+    """Email automático enviado, con seguimiento de aperturas (píxel) y clics (links redirigidos)."""
+    accion = models.ForeignKey(AccionEtapa, null=True, blank=True, on_delete=models.SET_NULL, related_name='emails')
+    oportunidad = models.ForeignKey('crm.Oportunidad', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    contacto = models.ForeignKey('crm.Contacto', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    para = models.EmailField()
+    asunto = models.CharField(max_length=200)
+    token = models.CharField(max_length=40, unique=True)
+    enviado_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    abierto_at = models.DateTimeField(null=True, blank=True)
+    aperturas = models.PositiveIntegerField(default=0)
+    clic_at = models.DateTimeField(null=True, blank=True)
+    clics = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['-enviado_at']

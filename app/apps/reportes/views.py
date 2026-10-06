@@ -215,6 +215,18 @@ class ExportarActividadView(PermisoRequeridoMixin, View):
         return resp
 
 
+class CalidadEnviosView(PermisoRequeridoMixin, View):
+    permiso = ('reportes', 'automatizaciones')
+
+    def get(self, request):
+        from . import analisis
+        p, desde, hasta, ini, fin = _periodo(request)
+        horas = int(request.GET.get('horas') or 48) if str(request.GET.get('horas') or '48').isdigit() else 48
+        return render(request, 'reportes/calidad_envios.html', {
+            'p': p, 'desde': desde, 'hasta': hasta, 'c': analisis.calidad_envios(ini, fin, horas_respuesta=horas),
+        })
+
+
 class MisNumerosView(LoginRequiredMixin, View):
     """Panel personal de la vendedora (o de una vendedora elegida, para quien tiene reportes)."""
 
