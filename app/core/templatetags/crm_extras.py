@@ -77,3 +77,9 @@ def pesos(valor, decimales=None):
     dec = int(decimales) if decimales not in (None, '') else (0 if abs(v) >= 1000 else 2)
     texto = f'{v:,.{dec}f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
     return f'$ {texto}'
+
+
+@register.filter
+def split_pares(texto):
+    """'a:A,b:B' → [('a', 'A'), ('b', 'B')] (para armar botones en plantillas)."""
+    return [tuple(p.split(':', 1)) for p in str(texto).split(',') if ':' in p]

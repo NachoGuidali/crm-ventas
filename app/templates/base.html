@@ -28,6 +28,9 @@
       <a href="{% url 'crm:mi_dia' %}" class="nav-item {% if url_name == 'mi_dia' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-sunrise"></i></span> Mi día
       </a>
+      <a href="{% url 'reportes:mis_numeros' %}" class="nav-item {% if url_name == 'mis_numeros' %}active{% endif %}">
+        <span class="nav-icon"><i class="bi bi-person-lines-fill"></i></span> Mis números
+      </a>
       <a href="{% url 'crm:tablero' %}" class="nav-item {% if url_name == 'tablero' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-kanban"></i></span> Tablero
       </a>

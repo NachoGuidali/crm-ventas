@@ -36,7 +36,7 @@
     <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filtrar</button>
     <button type="button" class="btn btn-link btn-sm" data-bs-toggle="collapse" data-bs-target="#masFiltros">Más filtros</button>
   </div>
-  <div class="collapse {% if sel.pauta or sel.origen or sel.tipificacion or sel.lote or sel.etiqueta or filtros.intentos_min or filtros.intentos_max or filtros.sin_actividad %}show{% endif %}" id="masFiltros">
+  <div class="collapse {% if sel.pauta or sel.origen or sel.tipificacion or sel.lote or sel.etiqueta or filtros.intentos_min or filtros.intentos_max or filtros.ingresos_min or filtros.sin_actividad %}show{% endif %}" id="masFiltros">
     <div class="toolbar mt-2">
       {% include "crm/_multi.html" with nombre="pauta" titulo="Pauta" opciones=opciones.pauta sel=sel.pauta %}
       {% include "crm/_multi.html" with nombre="origen" titulo="Canal" opciones=opciones.origen sel=sel.origen %}
@@ -45,6 +45,7 @@
       {% include "crm/_multi.html" with nombre="etiqueta" titulo="Etiqueta" opciones=opciones.etiqueta sel=sel.etiqueta %}
       <input type="number" min="0" name="intentos_min" value="{{ filtros.intentos_min }}" class="form-control form-control-sm" placeholder="Intentos desde" style="max-width:130px">
       <input type="number" min="0" name="intentos_max" value="{{ filtros.intentos_max }}" class="form-control form-control-sm" placeholder="Intentos hasta" style="max-width:130px">
+      <input type="number" min="1" name="ingresos_min" value="{{ filtros.ingresos_min }}" class="form-control form-control-sm" placeholder="Ingresó al menos N veces" style="max-width:190px" title="Cantidad de veces que entró (primer ingreso + reingresos)">
       <select name="sin_actividad" class="form-select form-select-sm" style="max-width:200px"><option value="">Cualquier actividad</option>
         <option value="1" {% if filtros.sin_actividad == '1' %}selected{% endif %}>Sin actividad +1 día</option>
         <option value="3" {% if filtros.sin_actividad == '3' %}selected{% endif %}>Sin actividad +3 días</option>
@@ -119,7 +120,8 @@
       <td><input type="checkbox" class="form-check-input chk" name="ids" value="{{ o.pk }}"></td>
       <td><a href="{% url 'crm:oportunidad_detalle' o.pk %}" class="fw-semibold text-decoration-none">{{ o.contacto.nombre }}</a>
         {% if o.tiene_vencidas %}<i class="bi bi-alarm text-danger" title="Tareas vencidas"></i>{% endif %}
-        {% if o.contacto.no_contactar %}<i class="bi bi-slash-circle text-danger" title="No contactar"></i>{% endif %}</td>
+        {% if o.contacto.no_contactar %}<i class="bi bi-slash-circle text-danger" title="No contactar"></i>{% endif %}
+        {% if o.ingresos > 1 %}<span class="chip warn" title="Ingresó {{ o.ingresos }} veces">×{{ o.ingresos }}</span>{% endif %}</td>
       <td class="text-nowrap">{{ o.contacto.telefono|telefono }}</td>
       {% for cp, val in o.campos_vista %}<td class="small">{{ val }}</td>{% endfor %}
       <td><span class="dot" style="background:{{ o.etapa.color }}"></span> {{ o.etapa }}</td>

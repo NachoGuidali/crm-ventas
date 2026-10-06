@@ -498,6 +498,8 @@ class Oportunidad(models.Model):
 
     # Gestión
     intentos_contacto = models.PositiveSmallIntegerField(default=0)
+    ingresos = models.PositiveIntegerField(default=1, help_text='Veces que la persona entró por esta oportunidad '
+                                                                '(primer ingreso + reingresos).')
     ultimo_intento_at = models.DateTimeField(null=True, blank=True)
     contacto_efectivo_at = models.DateTimeField(null=True, blank=True)
     ultima_actividad_at = models.DateTimeField(default=timezone.now)

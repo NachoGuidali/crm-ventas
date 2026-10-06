@@ -271,6 +271,7 @@ def ingresar_prospecto(datos: dict, embudo: Embudo, origen: str, fuente='', usua
 def _registrar_reingreso(op, contacto, texto, usuario, datos=None):
     Actividad.objects.create(contacto=contacto, oportunidad=op, tipo=Actividad.TIPO_REINGRESO, texto=texto,
                              usuario=usuario, datos=datos or {})
+    Oportunidad.objects.filter(pk=op.pk).update(ingresos=F('ingresos') + 1)
     if op.activa:
         tocar(op)
 
@@ -985,7 +986,8 @@ def filtrar_oportunidades(qs, params, user):
         qs = qs.filter(**{f'{campo_fecha}__date__gte': params['desde']})
     if params.get('hasta'):
         qs = qs.filter(**{f'{campo_fecha}__date__lte': params['hasta']})
-    for clave, lookup in (('intentos_min', 'intentos_contacto__gte'), ('intentos_max', 'intentos_contacto__lte')):
+    for clave, lookup in (('intentos_min', 'intentos_contacto__gte'), ('intentos_max', 'intentos_contacto__lte'),
+                          ('ingresos_min', 'ingresos__gte')):
         if str(params.get(clave) or '').isdigit():
             qs = qs.filter(**{lookup: int(params[clave])})
     if params.get('sin_actividad'):

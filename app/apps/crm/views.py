@@ -248,7 +248,7 @@ def _chips_filtros(request, etapas, tipificaciones):
             params.pop(k, None)
         rango = f'{request.GET.get("desde") or "…"} → {request.GET.get("hasta") or "…"}'
         chips.append((f'{campo_fecha}: {rango}', params.urlencode()))
-    for clave, texto in (('q', 'Búsqueda'), ('origen_pauta', 'Origen de pauta:'), ('intentos_min', 'Intentos ≥'), ('intentos_max', 'Intentos ≤'),
+    for clave, texto in (('q', 'Búsqueda'), ('origen_pauta', 'Origen de pauta:'), ('intentos_min', 'Intentos ≥'), ('intentos_max', 'Intentos ≤'), ('ingresos_min', 'Ingresó ≥ veces:'),
                          ('sin_actividad', 'Sin actividad (días) ≥'), ('estancados', 'Estancados')):
         if request.GET.get(clave):
             params = request.GET.copy()

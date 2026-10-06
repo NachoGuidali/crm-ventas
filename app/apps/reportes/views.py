@@ -167,7 +167,11 @@ class DashboardView(PermisoRequeridoMixin, View):
         for o in origenes:
             o['nombre'] = nombres_origen.get(o['origen'], o['origen'])
 
+        from . import analisis
         return render(request, 'reportes/dashboard.html', {
+            'unicos': analisis.leads_unicos(embudo, ini, fin), 'conversion': analisis.embudo_conversion(embudo, ini, fin),
+            'pipeline': analisis.matriz_pipeline(embudo), 'actividad': analisis.actividad_vendedoras(ini, fin),
+            'columnas_actividad': analisis.COLUMNAS_ACTIVIDAD,
             'embudo': embudo, 'embudos': embudos, 'p': p, 'desde': desde, 'hasta': hasta, 'm': m,
             'etapas': etapas, 'serie': serie, 'tip_venta': tip_venta, 'tip_no': tip_no,
             'categorias': sorted(categorias.items(), key=lambda x: -x[1]), 'postergados': postergados,
@@ -192,6 +196,48 @@ class ExportarRankingView(PermisoRequeridoMixin, View):
             w.writerow([f['u'].display_name, f['asignados'], f['efectivos'], f['ventas'], f['perdidas'],
                         f['conversion'], f['abiertas'], f['llamadas'], f['minutos']])
         return resp
+
+
+class ExportarActividadView(PermisoRequeridoMixin, View):
+    permiso = 'reportes'
+
+    def get(self, request):
+        from . import analisis
+        _, desde, hasta, ini, fin = _periodo(request)
+        resp = HttpResponse(content_type='text/csv; charset=utf-8')
+        resp['Content-Disposition'] = f'attachment; filename="actividad_{desde:%Y%m%d}_{hasta:%Y%m%d}.csv"'
+        resp.write('\ufeff')
+        w = csv.writer(resp, delimiter=';')
+        w.writerow(['Vendedora'] + [t for _, t in analisis.COLUMNAS_ACTIVIDAD])
+        for f in analisis.actividad_vendedoras(ini, fin):
+            w.writerow([f['u'].display_name] + [f[k] for k, _ in analisis.COLUMNAS_ACTIVIDAD])
+        return resp
+
+
+class MisNumerosView(LoginRequiredMixin, View):
+    """Panel personal de la vendedora (o de una vendedora elegida, para quien tiene reportes)."""
+
+    def get(self, request):
+        from apps.crm.models import Oportunidad
+        from apps.crm.views import agentes_activos, embudo_actual
+        from apps.users.models import User
+        from . import analisis
+        embudo, embudos = embudo_actual(request)
+        p, desde, hasta, ini, fin = _periodo(request)
+        agente = request.user
+        if request.GET.get('agente') and request.user.tiene_permiso('reportes'):
+            agente = User.objects.filter(pk=request.GET['agente']).first() or request.user
+        actividad = analisis.actividad_vendedoras(ini, fin, agentes=[agente])
+        return render(request, 'reportes/mis_numeros.html', {
+            'agente': agente, 'embudo': embudo, 'embudos': embudos, 'p': p, 'desde': desde, 'hasta': hasta,
+            'm': metricas(embudo, ini, fin, agente=agente), 'unicos': analisis.leads_unicos(embudo, ini, fin, agente),
+            'conversion': analisis.embudo_conversion(embudo, ini, fin, agente),
+            'pipeline': analisis.matriz_pipeline(embudo, agente),
+            'act': actividad[0] if actividad else None, 'columnas_actividad': analisis.COLUMNAS_ACTIVIDAD,
+            'agentes': agentes_activos() if request.user.tiene_permiso('reportes') else [],
+            'sin_contactar': Oportunidad.objects.filter(agente=agente, estado=Oportunidad.ESTADO_ABIERTA,
+                                                        intentos_contacto=0).count(),
+        })
 
 
 class PulsoView(LoginRequiredMixin, View):

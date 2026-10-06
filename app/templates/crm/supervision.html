@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Supervisión{% endblock %}
 {% block content %}
+{% include "reportes/_autorefresh.html" %}
 <div class="page-head"><h1><i class="bi bi-binoculars"></i> Supervisión</h1><div class="toolbar">{% include "crm/_filtros_embudo.html" %}</div></div>
 <div class="row g-3 mb-3">
   <div class="col-md-4"><div class="kpi {% if sin_asignar %}alerta{% endif %}"><div class="v">{{ sin_asignar }}</div><div class="l">Prospectos sin asignar</div>

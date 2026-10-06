@@ -83,6 +83,7 @@
       <div class="card-body">
         <dl class="kv">
           <dt>Etapa</dt><dd><span class="dot" style="background:{{ op.etapa.color }}"></span> {{ op.etapa }} <span class="muted">· {{ op.dias_en_etapa }} días</span></dd>
+          <dt>Ingresos</dt><dd>{% if op.ingresos > 1 %}<b>{{ op.ingresos }} veces</b> <span class="muted">(primer ingreso + {{ op.ingresos|add:"-1" }} reingreso{{ op.ingresos|add:"-1"|pluralize }})</span>{% else %}1 vez{% endif %}</dd>
           <dt>Intentos</dt><dd>{{ op.intentos_contacto }}{% if op.ultimo_intento_at %} <span class="muted">· último {{ op.ultimo_intento_at|date:"d/m H:i" }}</span>{% endif %}</dd>
           <dt>Contacto efectivo</dt><dd>{{ op.contacto_efectivo_at|date:"d/m/Y H:i"|default:"—" }}</dd>
           <dt>Ingresó</dt><dd>{{ op.created_at|date:"d/m/Y H:i" }}</dd>

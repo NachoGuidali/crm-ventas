@@ -7,4 +7,6 @@ app_name = 'reportes'
 urlpatterns = [
     path('', views.DashboardView.as_view(), name='dashboard'),
     path('ranking.csv', views.ExportarRankingView.as_view(), name='ranking_csv'),
+    path('actividad.csv', views.ExportarActividadView.as_view(), name='actividad_csv'),
+    path('mis-numeros/', views.MisNumerosView.as_view(), name='mis_numeros'),
 ]
