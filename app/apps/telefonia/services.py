@@ -385,6 +385,9 @@ def _al_finalizar(llamada, config):
         crm.tocar(op)
         if llamada.direccion == Llamada.DIR_SALIENTE or llamada.estado == Llamada.ESTADO_ATENDIDA:
             crm.marcar_primer_contacto(op, llamada.inicio_at)
+        if llamada.estado == Llamada.ESTADO_ATENDIDA and op.activa:
+            from apps.automatizaciones.services import cliente_respondio
+            cliente_respondio(op)
         if llamada.direccion == Llamada.DIR_SALIENTE and op.activa:
             resultado = {'atendida': 'contactado', 'ocupado': 'ocupado'}.get(llamada.estado, 'sin_respuesta')
             crm.registrar_intento(op, llamada.agente, canal='llamada', resultado=resultado, crear_actividad=False)

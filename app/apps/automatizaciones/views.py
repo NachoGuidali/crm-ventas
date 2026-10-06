@@ -17,7 +17,7 @@ class AccionForm(forms.ModelForm):
 
     class Meta:
         model = AccionEtapa
-        fields = ['nombre', 'etapa', 'tipo', 'activa', 'solo_si_sigue_en_etapa', 'solo_en_horario', 'plantilla', 'texto',
+        fields = ['nombre', 'etapa', 'disparador', 'tipo', 'mover_a', 'tipificacion', 'activa', 'solo_si_sigue_en_etapa', 'solo_en_horario', 'plantilla', 'texto',
                   'linea', 'email_asunto', 'tarea_titulo', 'tarea_vence_horas', 'modo_embudo', 'embudo_destino',
                   'etapa_destino', 'volver_a', 'asignar_destino', 'usuario_destino']
         widgets = {'texto': forms.Textarea(attrs={'rows': 4})}
@@ -27,6 +27,11 @@ class AccionForm(forms.ModelForm):
         self.embudo = embudo
         if embudo is not None:
             self.fields['etapa'].queryset = embudo.etapas.order_by('orden')
+            self.fields['mover_a'].queryset = embudo.etapas.order_by('orden')
+            from django.db.models import Q as _Q
+            from apps.crm.models import Tipificacion
+            self.fields['tipificacion'].queryset = Tipificacion.objects.filter(
+                _Q(embudo=embudo) | _Q(embudo__isnull=True), activa=True).order_by('resultado', 'nombre')
         from apps.crm.models import Embudo, Etapa
         from apps.users.models import User
         otros = Embudo.objects.filter(activo=True).exclude(pk=getattr(embudo, 'pk', None))
@@ -54,6 +59,17 @@ class AccionForm(forms.ModelForm):
             self.add_error('plantilla', 'Elegí una plantilla o escribí un texto.')
         if tipo == AccionEtapa.TIPO_EMAIL and not d.get('texto'):
             self.add_error('texto', 'Escribí el cuerpo del email.')
+        disp = d.get('disparador')
+        if disp in (AccionEtapa.DISP_SIN_RESPUESTA, AccionEtapa.DISP_SIN_ACTIVIDAD) and not d.get('demora_valor'):
+            self.add_error('demora_valor', 'Indicá cuánto tiempo esperar.')
+        if tipo == AccionEtapa.TIPO_ETAPA:
+            destino, tip = d.get('mover_a'), d.get('tipificacion')
+            if destino is None:
+                self.add_error('mover_a', 'Elegí la etapa.')
+            elif destino.es_cierre:
+                esperado = 'venta' if destino.es_ganado else 'no_venta'
+                if tip is None or tip.resultado != esperado or tip.es_postergacion:
+                    self.add_error('tipificacion', f'Para cerrar como {destino} elegí una tipificación de ese tipo (no de postergación).')
         if tipo == AccionEtapa.TIPO_EMBUDO:
             modo, etapa = d.get('modo_embudo'), d.get('etapa')
             if modo != AccionEtapa.MODO_VOLVER and not d.get('embudo_destino'):

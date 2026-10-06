@@ -7,8 +7,9 @@
   <div class="row g-2">
     <div class="col-md-7"><label class="form-label">Nombre</label>{{ form.nombre }}</div>
     <div class="col-md-5"><label class="form-label">{{ form.etapa.label }}</label>{{ form.etapa }}</div>
+    <div class="col-12"><label class="form-label">{{ form.disparador.label }}</label>{{ form.disparador }}<div class="form-text" id="ayudaDisp"></div></div>
     <div class="col-md-6"><label class="form-label">Acción</label>{{ form.tipo }}</div>
-    <div class="col-md-3"><label class="form-label">Demora</label>{{ form.demora_valor }}</div>
+    <div class="col-md-3"><label class="form-label" id="lblDemora">Demora</label>{{ form.demora_valor }}{{ form.demora_valor.errors }}</div>
     <div class="col-md-3"><label class="form-label">&nbsp;</label>{{ form.demora_unidad }}</div>
     <div class="col-12 t t-whatsapp"><label class="form-label">Plantilla</label>{{ form.plantilla }}{{ form.plantilla.errors }}<div class="form-text">{{ form.plantilla.help_text }}</div></div>
     <div class="col-12 t t-whatsapp"><label class="form-label">Línea</label>{{ form.linea }}<div class="form-text">{{ form.linea.help_text }}</div></div>
@@ -16,6 +17,8 @@
     <div class="col-12 t t-whatsapp t-email"><label class="form-label">Texto <span class="muted">(si no usás plantilla)</span></label>{{ form.texto }}{{ form.texto.errors }}<div class="form-text">{{ form.texto.help_text }}</div></div>
     <div class="col-md-8 t t-tarea t-notif_agente t-notif_supervisores"><label class="form-label">Título de la tarea / aviso</label>{{ form.tarea_titulo }}</div>
     <div class="col-md-4 t t-tarea"><label class="form-label">Vence en (horas)</label>{{ form.tarea_vence_horas }}</div>
+    <div class="col-md-6 t t-etapa"><label class="form-label">{{ form.mover_a.label }}</label>{{ form.mover_a }}{{ form.mover_a.errors }}</div>
+    <div class="col-md-6 t t-etapa"><label class="form-label">{{ form.tipificacion.label }}</label>{{ form.tipificacion }}{{ form.tipificacion.errors }}</div>
     <div class="col-12 t t-embudo"><label class="form-label">{{ form.modo_embudo.label }}</label>{{ form.modo_embudo }}{{ form.modo_embudo.errors }}</div>
     <div class="col-md-6 t t-embudo m-destino"><label class="form-label">{{ form.embudo_destino.label }}</label>{{ form.embudo_destino }}{{ form.embudo_destino.errors }}</div>
     <div class="col-md-6 t t-embudo m-destino"><label class="form-label">{{ form.etapa_destino.label }}</label>{{ form.etapa_destino }}{{ form.etapa_destino.errors }}<div class="form-text">{{ form.etapa_destino.help_text }}</div></div>
@@ -55,7 +58,14 @@
   };
   emb.addEventListener('change', filtrarEtapas); modo.addEventListener('change', updEmbudo); asig.addEventListener('change', updEmbudo);
   tipo.addEventListener('change', () => { upd(); updEmbudo(); }); pl.addEventListener('change', prev); tx.addEventListener('input', prev);
-  upd(); filtrarEtapas(); updEmbudo(); prev();
+  const disp = document.getElementById('id_disparador');
+  const textosDisp = {entrada: ['Demora', 'Se ejecuta al entrar a la etapa, después de la demora (0 = enseguida).'],
+    sin_respuesta: ['Esperar', 'Si pasado ese tiempo desde que entró a la etapa el cliente no escribió ni atendió una llamada, se ejecuta. Ej: "Si no responde en 2 días → mandar seguimiento".'],
+    respuesta: ['Demora', 'Se ejecuta la primera vez que el cliente escribe por WhatsApp o atiende una llamada estando en esta etapa.'],
+    sin_actividad: ['Sin actividad durante', 'Si la tarjeta no tiene ningún movimiento (llamadas, mensajes, notas, cambios) durante ese tiempo. Ej: "7 días sin actividad → cerrar como Sin respuesta".']};
+  const updDisp = () => { const t = textosDisp[disp.value]; document.getElementById('lblDemora').textContent = t[0]; document.getElementById('ayudaDisp').textContent = t[1]; };
+  disp.addEventListener('change', updDisp);
+  upd(); filtrarEtapas(); updEmbudo(); updDisp(); prev();
 })();
 </script>
 {% endblock %}

@@ -153,6 +153,8 @@ def procesar_mensaje_entrante(linea, msg):
     )
     if oportunidad and oportunidad.activa:
         crm.tocar(oportunidad, ahora)
+        from apps.automatizaciones.services import cliente_respondio
+        transaction.on_commit(lambda: cliente_respondio(oportunidad))
 
     if agente_id and era_leida:
         from apps.users.models import User

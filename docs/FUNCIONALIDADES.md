@@ -406,7 +406,14 @@ las llamadas, recibe los avisos y registra todo. No usa troncal SIP.
 
 ## 14. Automatizaciones
 
-Se configuran **por etapa**: "cuando la tarjeta entra a esta etapa, hacer…".
+Se configuran **por etapa**, con un disparador:
+
+| Disparador | Ejemplo |
+|---|---|
+| Al entrar a la etapa (con demora opcional) | Bienvenida al instante, seguimiento al día 3 y al día 7 |
+| Si el cliente no responde en X tiempo | "Si no respondió en 2 días → mandar recordatorio" |
+| Cuando el cliente responde (WhatsApp o llamada atendida) | "Respondió → pasar a En gestión y avisar a la vendedora" |
+| Si no hay actividad durante X tiempo | "7 días sin movimiento → cerrar como Sin respuesta" |
 
 | Acción | Detalle |
 |---|---|
@@ -415,6 +422,7 @@ Se configuran **por etapa**: "cuando la tarjeta entra a esta etapa, hacer…".
 | Crear tarea | Para el vendedor, con vencimiento en N horas |
 | Notificar al vendedor | Notificación interna |
 | Notificar a supervisión | A los supervisores del embudo |
+| Mover a otra etapa / cerrar | A otra etapa del embudo, o a Venta / No venta con su tipificación |
 | Pasar a otro embudo | **Crear** una oportunidad nueva en otro embudo (la actual queda como está; ej. Venta → embudo Clientes), **mover** la misma tarjeta a otro embudo (ej. "En verificación" → embudo Verificaciones) o **volver** al embudo del que vino (a la etapa donde estaba o a la siguiente). Se elige embudo y etapa de destino y a quién se asigna: mismo agente, regla del embudo destino o un usuario fijo |
 
 Opciones de cada automatización:

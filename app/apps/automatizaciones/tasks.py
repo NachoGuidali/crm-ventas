@@ -17,3 +17,9 @@ def revisar_inactividad():
 def barrer_programadas():
     from .services import barrer_programadas as barrer
     return barrer()
+
+
+@shared_task(name='automatizaciones.revisar_sin_actividad')
+def revisar_sin_actividad():
+    from .services import revisar_sin_actividad as revisar
+    return revisar()

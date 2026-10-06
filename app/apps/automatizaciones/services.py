@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.db import IntegrityError, transaction
+from django.db.models import Exists, F, OuterRef
 from django.utils import timezone
 from django.utils.html import escape, linebreaks
 
@@ -37,7 +38,8 @@ def programar_acciones_de_etapa(oportunidad_id, historial_id):
     if historial is None or historial.etapa_nueva_id is None:
         return 0
     op = historial.oportunidad
-    acciones = AccionEtapa.objects.filter(etapa_id=historial.etapa_nueva_id, activa=True).order_by('orden', 'pk')
+    acciones = AccionEtapa.objects.filter(etapa_id=historial.etapa_nueva_id, activa=True, disparador__in=[
+        AccionEtapa.DISP_ENTRADA, AccionEtapa.DISP_SIN_RESPUESTA]).order_by('orden', 'pk')
     ahora = timezone.now()
     programadas = 0
     for accion in acciones:
@@ -53,6 +55,63 @@ def programar_acciones_de_etapa(oportunidad_id, historial_id):
         programadas += 1
         _encolar(ejec, cuando, ahora)
     return programadas
+
+
+def _historial_actual(op):
+    from apps.crm.models import HistorialEtapa
+    return HistorialEtapa.objects.filter(oportunidad=op, etapa_nueva_id=op.etapa_id).order_by('-created_at', '-pk').first()
+
+
+def _programar_ya(accion, op, historial):
+    """Crea (una sola vez por entrada a la etapa) y encola una ejecución inmediata."""
+    if historial is None:
+        return None
+    ahora = timezone.now()
+    cuando = proxima_apertura(op.embudo, ahora) if accion.solo_en_horario else ahora
+    try:
+        with transaction.atomic():
+            ejec = EjecucionAccion.objects.create(accion=accion, oportunidad=op, historial=historial, programada_para=cuando)
+    except IntegrityError:
+        return None
+    _encolar(ejec, cuando, ahora)
+    return ejec
+
+
+def cliente_respondio(op):
+    """El cliente respondió (mensaje entrante o llamada atendida): dispara las automatizaciones "Cuando responde"."""
+    if op is None or not op.activa:
+        return 0
+    acciones = list(AccionEtapa.objects.filter(etapa_id=op.etapa_id, activa=True, disparador=AccionEtapa.DISP_RESPUESTA))
+    if not acciones:
+        return 0
+    historial = _historial_actual(op)
+    return sum(1 for a in acciones if _programar_ya(a, op, historial))
+
+
+def revisar_sin_actividad():
+    """Cada 5 min: automatizaciones "Si no hay actividad durante X" sobre las oportunidades en esa etapa."""
+    from apps.crm.models import Oportunidad
+    ahora, n = timezone.now(), 0
+    for accion in AccionEtapa.objects.filter(activa=True, disparador=AccionEtapa.DISP_SIN_ACTIVIDAD).select_related('embudo'):
+        limite = ahora - timedelta(minutes=max(accion.demora_minutos, 1))
+        ops = (Oportunidad.objects.filter(etapa_id=accion.etapa_id, estado=Oportunidad.ESTADO_ABIERTA,
+                                          ultima_actividad_at__lt=limite, etapa_desde__lt=limite)
+               .exclude(Exists(EjecucionAccion.objects.filter(accion=accion, oportunidad=OuterRef('pk'),
+                                                             created_at__gte=OuterRef('etapa_desde'))))
+               .select_related('embudo')[:300])
+        for op in ops:
+            if _programar_ya(accion, op, _historial_actual(op)):
+                n += 1
+    return n
+
+
+def _respondio_desde(op, desde):
+    from apps.telefonia.models import Llamada
+    from apps.whatsapp.models import Mensaje
+    return (Mensaje.objects.filter(conversacion__contacto_id=op.contacto_id, direccion=Mensaje.DIR_ENTRANTE,
+                                   timestamp__gte=desde).exists()
+            or Llamada.objects.filter(contacto_id=op.contacto_id, direccion=Llamada.DIR_ENTRANTE,
+                                      estado=Llamada.ESTADO_ATENDIDA, inicio_at__gte=desde).exists())
 
 
 def _encolar(ejec, cuando, ahora):
@@ -71,7 +130,7 @@ def _encolar(ejec, cuando, ahora):
 def ejecutar(ejecucion_id):
     with transaction.atomic():
         ejec = (EjecucionAccion.objects.select_for_update(of=('self',))
-                .select_related('accion', 'oportunidad__contacto', 'oportunidad__embudo', 'oportunidad__etapa',
+                .select_related('accion', 'historial', 'oportunidad__contacto', 'oportunidad__embudo', 'oportunidad__etapa',
                                 'oportunidad__agente').filter(pk=ejecucion_id).first())
         if ejec is None or ejec.estado != EjecucionAccion.ESTADO_PROGRAMADA:
             return None
@@ -83,7 +142,12 @@ def ejecutar(ejecucion_id):
 
     accion, op = ejec.accion, ejec.oportunidad
     try:
-        estado, detalle = _correr(accion, op)
+        desde = None
+        if accion.disparador == AccionEtapa.DISP_SIN_RESPUESTA and ejec.historial_id:
+            desde = ejec.historial.created_at
+        elif accion.disparador == AccionEtapa.DISP_SIN_ACTIVIDAD:
+            desde = ejec.created_at
+        estado, detalle = _correr(accion, op, desde)
     except Exception as e:
         logger.exception('Error ejecutando automatización %s sobre oportunidad #%s', accion, op.pk)
         estado, detalle = EjecucionAccion.ESTADO_ERROR, str(e)[:500]
@@ -91,7 +155,7 @@ def ejecutar(ejecucion_id):
     return estado
 
 
-def _correr(accion, op):
+def _correr(accion, op, ejec_desde=None):
     from apps.crm import services as crm
     from apps.crm.models import Actividad, Oportunidad, Tarea
     from apps.users.services import notificar, notificar_varios, supervisores_de
@@ -103,6 +167,11 @@ def _correr(accion, op):
         return E.ESTADO_OMITIDA, 'La automatización se desactivó.'
     if accion.solo_si_sigue_en_etapa and op.etapa_id != accion.etapa_id:
         return E.ESTADO_OMITIDA, 'El prospecto ya no está en esa etapa.'
+    if accion.disparador == AccionEtapa.DISP_SIN_RESPUESTA and ejec_desde is not None and _respondio_desde(op, ejec_desde):
+        return E.ESTADO_OMITIDA, 'El cliente respondió.'
+    if accion.disparador == AccionEtapa.DISP_SIN_ACTIVIDAD and ejec_desde is not None \
+            and op.ultima_actividad_at and op.ultima_actividad_at > ejec_desde:
+        return E.ESTADO_OMITIDA, 'Hubo actividad antes de ejecutar.'
     es_mensaje = accion.tipo in (AccionEtapa.TIPO_WHATSAPP, AccionEtapa.TIPO_EMAIL)
     if es_mensaje and op.estado == Oportunidad.ESTADO_PAUSADA:
         return E.ESTADO_OMITIDA, 'El prospecto está pausado.'
@@ -159,6 +228,23 @@ def _correr(accion, op):
         except crm.ErrorNegocio as e:
             return E.ESTADO_OMITIDA, str(e)
         return E.ESTADO_EJECUTADA, f'{"Creada #" + str(destino.pk) + " en" if destino.pk != op.pk else "Pasó a"} {destino.embudo} · {destino.etapa}'
+
+    if accion.tipo == AccionEtapa.TIPO_ETAPA:
+        destino = accion.mover_a
+        if destino is None or destino.embudo_id != op.embudo_id:
+            return E.ESTADO_OMITIDA, 'La etapa de destino no es de este embudo.'
+        if not op.activa:
+            return E.ESTADO_OMITIDA, 'La oportunidad ya está cerrada.'
+        try:
+            if destino.es_cierre and accion.tipificacion and accion.tipificacion.es_postergacion:
+                return E.ESTADO_OMITIDA, 'Para postergar usá una tipificación que no sea de postergación.'
+            hist = crm.mover_etapa(op, destino, None, tipificacion=accion.tipificacion if destino.es_cierre else None,
+                                   nota=f'Automatización: {accion.nombre}', automatico=True)
+        except crm.ErrorNegocio as e:
+            return E.ESTADO_OMITIDA, str(e)
+        if hist is None:
+            return E.ESTADO_OMITIDA, 'No se movió (ya estaba ahí o faltan datos obligatorios).'
+        return E.ESTADO_EJECUTADA, f'Pasó a {destino}'
 
     return E.ESTADO_OMITIDA, 'Tipo de acción desconocido.'
 

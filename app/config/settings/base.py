@@ -173,6 +173,7 @@ CELERY_BEAT_SCHEDULE = {
     'reactivar-pausadas': {'task': 'crm.reactivar_pausadas', 'schedule': 300},
     'vencer-tareas': {'task': 'crm.notificar_tareas_vencidas', 'schedule': 600},
     'automatizaciones-programadas': {'task': 'automatizaciones.barrer_programadas', 'schedule': 60},
+    'automatizaciones-sin-actividad': {'task': 'automatizaciones.revisar_sin_actividad', 'schedule': 300},
     'recordatorio-inactividad': {'task': 'automatizaciones.revisar_inactividad', 'schedule': crontab(minute=15)},
     'discador-tick': {'task': 'telefonia.discador_tick', 'schedule': 10},
     'anura-polling-cdrs': {'task': 'telefonia.polling_cdrs', 'schedule': 300},

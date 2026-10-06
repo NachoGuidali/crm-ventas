@@ -12,6 +12,17 @@ class AccionEtapa(models.Model):
     TIPO_NOTIF_AGENTE = 'notif_agente'
     TIPO_NOTIF_SUPERVISORES = 'notif_supervisores'
     TIPO_EMBUDO = 'embudo'
+    TIPO_ETAPA = 'etapa'
+    DISP_ENTRADA = 'entrada'
+    DISP_SIN_RESPUESTA = 'sin_respuesta'
+    DISP_RESPUESTA = 'respuesta'
+    DISP_SIN_ACTIVIDAD = 'sin_actividad'
+    DISPARADORES = [
+        (DISP_ENTRADA, 'Al entrar a la etapa'),
+        (DISP_SIN_RESPUESTA, 'Si el cliente no responde (en el tiempo de demora desde que entró a la etapa)'),
+        (DISP_RESPUESTA, 'Cuando el cliente responde (WhatsApp o llamada atendida) estando en la etapa'),
+        (DISP_SIN_ACTIVIDAD, 'Si no hay ninguna actividad durante el tiempo de demora'),
+    ]
     TIPO_CHOICES = [
         (TIPO_WHATSAPP, 'Enviar WhatsApp al prospecto'),
         (TIPO_EMAIL, 'Enviar email al prospecto'),
@@ -19,6 +30,7 @@ class AccionEtapa(models.Model):
         (TIPO_NOTIF_AGENTE, 'Notificar al agente'),
         (TIPO_NOTIF_SUPERVISORES, 'Notificar a supervisión'),
         (TIPO_EMBUDO, 'Pasar a otro embudo'),
+        (TIPO_ETAPA, 'Mover a otra etapa / cerrar'),
     ]
     MODO_CREAR = 'crear'
     MODO_MOVER = 'mover'
@@ -34,12 +46,13 @@ class AccionEtapa(models.Model):
     ASIGNAR_CHOICES = [('mismo', 'Al mismo agente'), ('embudo', 'Según la regla del embudo de destino'),
                        ('usuario', 'A un usuario fijo')]
     ICONOS = {TIPO_WHATSAPP: 'whatsapp', TIPO_EMAIL: 'envelope', TIPO_TAREA: 'calendar-plus',
-              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone', TIPO_EMBUDO: 'signpost-split'}
+              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone', TIPO_EMBUDO: 'signpost-split', TIPO_ETAPA: 'arrow-right-circle'}
 
     embudo = models.ForeignKey('crm.Embudo', on_delete=models.CASCADE, related_name='acciones')
     etapa = models.ForeignKey('crm.Etapa', on_delete=models.CASCADE, related_name='acciones',
                               verbose_name='Cuando entra a la etapa')
     nombre = models.CharField(max_length=120)
+    disparador = models.CharField(max_length=15, choices=DISPARADORES, default=DISP_ENTRADA, verbose_name='Cuándo')
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default=TIPO_WHATSAPP)
     activa = models.BooleanField(default=True)
     demora_minutos = models.PositiveIntegerField(default=0, verbose_name='Demora (minutos)',
@@ -66,6 +79,11 @@ class AccionEtapa(models.Model):
     tarea_titulo = models.CharField(max_length=200, blank=True)
     tarea_vence_horas = models.PositiveSmallIntegerField(default=24)
 
+    # Mover a otra etapa / cerrar (mismo embudo)
+    mover_a = models.ForeignKey('crm.Etapa', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+                                verbose_name='Mover a la etapa')
+    tipificacion = models.ForeignKey('crm.Tipificacion', null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name='+', verbose_name='Tipificación (si cierra)')
     # Pasar a otro embudo
     modo_embudo = models.CharField(max_length=10, choices=MODO_CHOICES, default=MODO_CREAR, verbose_name='Cómo')
     embudo_destino = models.ForeignKey('crm.Embudo', null=True, blank=True, on_delete=models.SET_NULL,
@@ -95,6 +113,8 @@ class AccionEtapa(models.Model):
         return self.ICONOS.get(self.tipo, 'lightning')
 
     def resumen_embudo(self):
+        if self.tipo == self.TIPO_ETAPA:
+            return f'Pasa a {self.mover_a}' + (f' ({self.tipificacion})' if self.tipificacion_id else '')
         if self.tipo != self.TIPO_EMBUDO:
             return ''
         if self.modo_embudo == self.MODO_VOLVER:
