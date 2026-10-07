@@ -166,8 +166,19 @@ cd /opt/crm-ventas && docker compose up -d --build     # migra solo al arrancar
 ## 8. WhatsApp por QR (Evolution) — opcional, cuando haga falta
 
 ```bash
+cd /opt/crm-ventas
+grep EVOLUTION .env              # EVOLUTION_API_KEY con valor; EVOLUTION_PORT libre (ej. 8081)
+ss -ltnp | grep 8081             # tiene que estar libre
 docker compose --profile evolution up -d
+docker compose ps                # evolution-db-init "Exited (0)" y evolution-api "Up"
+docker compose logs evolution-api --tail 30
 ```
 
-Necesita un subdominio propio (`evo-crmmkt.supregsolutions.com`) con otro bloque nginx apuntando a
-`127.0.0.1:8081` y certificado. Detalle en `docs/INTEGRACION_WHATSAPP.md`.
+- `evolution-db-init` crea sola la base `evolution` dentro del Postgres del CRM (antes había que crearla a mano y, si
+  no existía, Evolution no arrancaba).
+- El CRM habla con Evolution por la red interna (`EVOLUTION_API_URL=http://evolution-api:8080`): no hace falta
+  publicarlo en internet ni un subdominio para que funcione el QR.
+- Después: *Configuración → Líneas WhatsApp → Nueva* → proveedor **Evolution** → guardar → **Conectar / ver QR** →
+  escanear desde el celular (WhatsApp → Dispositivos vinculados → Vincular un dispositivo).
+- Los mensajes entrantes llegan al webhook `https://<dominio>/whatsapp/webhook/evolution/<clave>/`, que el CRM
+  configura solo en Evolution al pedir el QR. Si no entran mensajes: `docker compose logs evolution-api | grep -i webhook`.

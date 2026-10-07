@@ -57,6 +57,23 @@ services:
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
 
   # Opcional: Evolution API para líneas por QR. Levantar con: docker compose --profile evolution up -d
+  # Crea (una sola vez) la base "evolution" que usa Evolution dentro del mismo Postgres.
+  evolution-db-init:
+    profiles: ["evolution"]
+    image: postgres:15-alpine
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-crm_ventas}
+      POSTGRES_DB: ${POSTGRES_DB:-crm_ventas}
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        psql -h db -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc "SELECT 1 FROM pg_database WHERE datname='evolution'" | grep -q 1 ||
+        psql -h db -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -c "CREATE DATABASE evolution"
+    depends_on:
+      db: {condition: service_healthy}
+
   evolution-api:
     profiles: ["evolution"]
     image: evoapicloud/evolution-api:latest
@@ -73,6 +90,8 @@ services:
     volumes: [evolution:/evolution/instances]
     depends_on:
       db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      evolution-db-init: {condition: service_completed_successfully}
 
 volumes:
   pgdata:
