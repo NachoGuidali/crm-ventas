@@ -342,15 +342,22 @@ def _correr(accion, op, ejec_desde=None):
     return E.ESTADO_OMITIDA, 'Tipo de acción desconocido.'
 
 
-def barrer_programadas():
-    """Ejecuta las acciones con demora larga cuando llega su hora (y las que no salieron por la cola)."""
+def barrer_programadas(limite=3000):
+    """
+    Cada minuto: encola las acciones con demora larga que llegaron a su hora (y las que no salieron por la cola).
+    No vuelve a encolar las que ya mandó hace menos de 10 min (evita duplicados en la cola si hay mucho volumen).
+    """
+    from django.core.cache import cache
     from .tasks import ejecutar_accion
     vencidas = list(EjecucionAccion.objects.filter(
         estado=EjecucionAccion.ESTADO_PROGRAMADA, programada_para__lte=timezone.now() - timedelta(seconds=30),
-    ).order_by('programada_para').values_list('pk', flat=True)[:500])
+    ).order_by('programada_para').values_list('pk', flat=True)[:limite])
+    n = 0
     for pk in vencidas:
-        ejecutar_accion.delay(pk)
-    return len(vencidas)
+        if cache.add(f'auto_encolada_{pk}', 1, 600):
+            ejecutar_accion.delay(pk)
+            n += 1
+    return n
 
 
 def revisar_inactividad():

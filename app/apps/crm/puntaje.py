@@ -90,10 +90,13 @@ def recalcular_todos(lote=500):
             break
         ultimo = bloque[-1].pk
         respondieron = _contactos_que_respondieron({o.contacto_id for o in bloque})
+        cambios = []
         for op in bloque:
             reglas = reglas_por_embudo.setdefault(op.embudo_id, _reglas(op.embudo_id))
             p = calcular(op, reglas, respondieron, ahora)
             if p != op.puntaje:
-                Oportunidad.objects.filter(pk=op.pk).update(puntaje=p)
-                cambiadas += 1
+                op.puntaje = p
+                cambios.append(op)
+        Oportunidad.objects.bulk_update(cambios, ['puntaje'], batch_size=500)
+        cambiadas += len(cambios)
     return cambiadas
