@@ -25,7 +25,7 @@
     <div class="col-md-6"><label class="form-label">WABA ID</label>{{ form.meta_waba_id }}</div>
     <div class="col-12"><label class="form-label">Access token permanente (System User)</label>{{ form.meta_access_token }}{{ form.meta_access_token.errors }}</div>
     <div class="col-md-6"><label class="form-label">App secret (firma del webhook)</label>{{ form.meta_app_secret }}</div>
-    <div class="col-md-4"><label class="form-label">Verify token</label>{{ form.meta_verify_token }}{{ form.meta_verify_token.errors }}</div>
+    <div class="col-md-4"><label class="form-label">Verify token</label>{{ form.meta_verify_token }}{{ form.meta_verify_token.errors }}<div class="form-text">Vacío = se genera solo al guardar.</div></div>
     <div class="col-md-2"><label class="form-label">Versión</label>{{ form.meta_api_version }}</div></div></div>
   <div class="prov prov-twilio mt-3"><div class="section-title">Twilio</div><div class="row g-2">
     <div class="col-md-6"><label class="form-label">Account SID</label>{{ form.twilio_account_sid }}{{ form.twilio_account_sid.errors }}</div>
@@ -42,6 +42,7 @@
   <div class="card mb-3"><div class="card-header">Webhook</div><div class="card-body small">
     <p class="muted mb-1">URL que recibe los mensajes de esta línea{% if linea.proveedor == 'meta' %} (pegala en Meta → WhatsApp → Configuración, con el verify token){% elif linea.proveedor == 'twilio' %} (Twilio → número → "A message comes in"){% endif %}:</p>
     <code class="copiable d-block">{{ linea.webhook_url }}</code>
+    {% if linea.proveedor == 'meta' %}<p class="muted mb-1 mt-2">Verify token:</p><code class="copiable d-block">{{ linea.meta_verify_token }}</code>{% endif %}
     {% if linea.proveedor == 'evolution' %}<form method="post" action="{% url 'whatsapp:linea_conexion' linea.pk %}" class="mt-2">{% csrf_token %}<button name="accion" value="webhook" class="btn btn-sm btn-outline-secondary">Configurarlo en Evolution</button></form>{% endif %}
     {% if linea.proveedor == 'meta' %}<form method="post" action="{% url 'whatsapp:linea_conexion' linea.pk %}" class="mt-2">{% csrf_token %}<button name="accion" value="sync_plantillas" class="btn btn-sm btn-outline-secondary">Sincronizar plantillas desde Meta</button></form>{% endif %}
   </div></div>

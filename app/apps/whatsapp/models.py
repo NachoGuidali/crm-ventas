@@ -99,6 +99,12 @@ class LineaWhatsApp(models.Model):
     def webhook_url(self):
         return settings.SITE_URL + reverse('whatsapp:webhook', args=[self.proveedor, self.webhook_key])
 
+    def save(self, *args, **kwargs):
+        # Meta pide un "verify token" para suscribir el webhook: si no se cargó, se genera uno.
+        if self.proveedor == self.PROV_META and not self.meta_verify_token:
+            self.meta_verify_token = _nueva_clave()[:32]
+        super().save(*args, **kwargs)
+
     def get_evolution_url(self):
         return (self.evolution_api_url or settings.EVOLUTION_API_URL).rstrip('/')
 
