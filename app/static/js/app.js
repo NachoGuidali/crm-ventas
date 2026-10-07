@@ -163,6 +163,12 @@
       return;
     }
     if (ll.viva && ll.direccion === 'IN' && ll.id !== ultimaLlamadaId) sonido();
+    // Discador: cada llamada nueva de la campaña abre la ficha del lead
+    if (ll.viva && ll.campania && ll.url && ll.id !== ultimaLlamadaId && location.pathname !== ll.url.split('?')[0]) {
+      ultimaLlamadaId = ll.id;
+      location.href = ll.url;
+      return;
+    }
     llamadaActual = Object.assign({}, ll, {recibida: Date.now()});
     ultimaLlamadaId = ll.id;
     w.className = 'show ' + (ll.viva ? ll.estado : 'fin');
