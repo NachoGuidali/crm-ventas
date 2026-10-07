@@ -23,3 +23,9 @@ def barrer_programadas():
 def revisar_sin_actividad():
     from .services import revisar_sin_actividad as revisar
     return revisar()
+
+
+@shared_task(name='automatizaciones.difusiones_tick')
+def difusiones_tick():
+    from .difusiones import tick
+    return tick()

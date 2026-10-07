@@ -675,3 +675,17 @@ Detalle punto por punto en [`CHECKLIST_ROISA.md`](CHECKLIST_ROISA.md).
 | SMS | Ficha, automatizaciones, Integraciones | Twilio: envío, respuestas al CRM (dispara "cuando responde") |
 | Puntaje de leads | Configuración | Reglas que suman/restan; se ve en tarjeta y lista, ordena Mi día |
 | Proyección | Dashboard | Ritmo del mes y ventas esperadas del pipeline |
+
+## 23. Email y difusiones
+
+| Función | Dónde | Qué hace |
+|---|---|---|
+| Plantillas de email | Configuración → Plantillas de email | Asunto y texto con variables; se usan en la ficha, automatizaciones y difusiones |
+| Configuración de email | Configuración → Configuración de email | Servidor SMTP (Gmail, Brevo, SES, Mailgun), remitente, emails por minuto, botón de prueba. Apagado = usa el `.env` |
+| Email desde la ficha | Botón "Email" | Con o sin plantilla; respuestas al email de la vendedora; seguimiento de apertura y clics |
+| Email automático | Automatizaciones → "Enviar email" | Plantilla de email o asunto y texto |
+| Secuencias | Automatizaciones → Cuándo: "Después de otra automatización" | Ej.: Bienvenida → 3 días → Recordatorio → 4 días → Último aviso |
+| Difusiones | Oportunidades (filtrar y seleccionar) → acción "Enviar difusión"; menú Difusiones | Por email o WhatsApp, ahora o programada, de a tandas; resultados por difusión (enviados, abiertos/clics o leídos/respondidos, bajas, omitidos) |
+| Baja de suscripción | Link al pie de difusiones y emails automáticos (+ encabezado List-Unsubscribe) | Marca al contacto "no recibir emails": no recibe más difusiones ni emails automáticos (WhatsApp y llamadas siguen) |
+
+Permiso nuevo: **Difusiones** (incluido en Supervisor y en el rol Comercial / Marketing).

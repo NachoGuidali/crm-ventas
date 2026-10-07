@@ -55,13 +55,18 @@
         <span class="nav-icon"><i class="bi bi-telephone-forward"></i></span> Discador
       </a>
 
-      {% if 'supervision' in perms_crm or 'reportes' in perms_crm or 'importar' in perms_crm or 'pautas' in perms_crm %}
+      {% if 'supervision' in perms_crm or 'reportes' in perms_crm or 'importar' in perms_crm or 'pautas' in perms_crm or 'difusiones' in perms_crm %}
       <div class="nav-section">Gestión</div>
       {% endif %}
       {% if 'reportes' in perms_crm or 'supervision' in perms_crm %}
       <a href="{% url 'reportes:dashboard' %}" class="nav-item {% if seccion == 'reportes' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-bar-chart-line"></i></span> Dashboard
       </a>
+      {% if 'difusiones' in perms_crm %}
+      <a href="{% url 'automatizaciones:difusiones' %}" class="nav-item {% if 'difusion' in url_name %}active{% endif %}">
+        <span class="nav-icon"><i class="bi bi-broadcast"></i></span> Difusiones
+      </a>
+      {% endif %}
       {% if 'reportes' in perms_crm or 'automatizaciones' in perms_crm %}
       <a href="{% url 'reportes:calidad_envios' %}" class="nav-item {% if url_name == 'calidad_envios' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-send-check"></i></span> Calidad de envíos
@@ -105,6 +110,16 @@
       {% if 'automatizaciones' in perms_crm %}
       <a href="{% url 'automatizaciones:lista' %}" class="nav-item {% if seccion == 'automatizaciones' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-lightning-charge"></i></span> Automatizaciones
+      </a>
+      {% endif %}
+      {% if 'automatizaciones' in perms_crm or 'difusiones' in perms_crm or 'plantillas' in perms_crm %}
+      <a href="{% url 'automatizaciones:plantillas_email' %}" class="nav-item {% if 'plantilla_email' in url_name or 'plantillas_email' in url_name %}active{% endif %}">
+        <span class="nav-icon"><i class="bi bi-envelope-paper"></i></span> Plantillas de email
+      </a>
+      {% endif %}
+      {% if 'integraciones' in perms_crm %}
+      <a href="{% url 'automatizaciones:config_email' %}" class="nav-item {% if url_name == 'config_email' %}active{% endif %}">
+        <span class="nav-icon"><i class="bi bi-envelope-at"></i></span> Configuración de email
       </a>
       {% endif %}
       {% if 'plantillas' in perms_crm %}

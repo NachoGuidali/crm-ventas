@@ -10,6 +10,7 @@ PERMISOS = [
     ('supervision', 'Panel de supervisión y carga por agente', 'Visibilidad'),
     ('reportes', 'Ver reportes y métricas', 'Visibilidad'),
     ('pautas', 'Análisis de pautas: crear pautas y cargar inversión', 'Marketing'),
+    ('difusiones', 'Enviar difusiones masivas (email / WhatsApp)', 'Marketing'),
     ('reasignar', 'Reasignar oportunidades y chats a otros agentes', 'Gestión comercial'),
     ('importar', 'Importar bases de prospectos (Excel / CSV)', 'Gestión comercial'),
     ('exportar', 'Exportar datos a Excel / CSV', 'Gestión comercial'),
@@ -88,7 +89,7 @@ class User(AbstractUser):
         ROL_ADMIN: TODOS_LOS_PERMISOS,
         ROL_SUPERVISOR: frozenset({
             'ver_todo', 'supervision', 'reportes', 'reasignar', 'importar', 'exportar',
-            'reabrir', 'discador', 'plantillas', 'pautas',
+            'reabrir', 'discador', 'plantillas', 'pautas', 'difusiones',
         }),
         ROL_AGENTE: frozenset(),
     }

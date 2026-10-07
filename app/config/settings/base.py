@@ -165,6 +165,7 @@ CELERY_TASK_ROUTES = {
     'crm.accion_masiva': {'queue': 'masivos'},
     'whatsapp.enviar_mensaje': {'queue': 'salientes'},
     'automatizaciones.ejecutar_accion': {'queue': 'salientes'},
+    'automatizaciones.difusiones_tick': {'queue': 'masivos'},
 }
 CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_BEAT_SCHEDULE = {
@@ -174,6 +175,7 @@ CELERY_BEAT_SCHEDULE = {
     'reactivar-pausadas': {'task': 'crm.reactivar_pausadas', 'schedule': 300},
     'vencer-tareas': {'task': 'crm.notificar_tareas_vencidas', 'schedule': 600},
     'automatizaciones-programadas': {'task': 'automatizaciones.barrer_programadas', 'schedule': 60},
+    'difusiones': {'task': 'automatizaciones.difusiones_tick', 'schedule': 60},
     'automatizaciones-sin-actividad': {'task': 'automatizaciones.revisar_sin_actividad', 'schedule': 300},
     'recordatorio-inactividad': {'task': 'automatizaciones.revisar_inactividad', 'schedule': crontab(minute=15)},
     'discador-tick': {'task': 'telefonia.discador_tick', 'schedule': 10},

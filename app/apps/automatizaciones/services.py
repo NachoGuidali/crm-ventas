@@ -15,22 +15,50 @@ from .models import AccionEtapa, EjecucionAccion, EmailEnviado
 logger = logging.getLogger('apps.automatizaciones')
 
 
-def enviar_email(contacto, op, asunto, cuerpo, usuario=None, accion=None):
-    """Envía un email (manual o automático) con seguimiento de apertura y clics, y lo registra en la ficha."""
+def conexion_email():
+    """(conexión, remitente): la de la pantalla "Configuración de email" si está activa; si no, la del .env."""
+    from django.core.mail import get_connection
+    from .models import ConfigEmail
+    c = ConfigEmail.get()
+    if c.activo and c.host:
+        con = get_connection('django.core.mail.backends.smtp.EmailBackend', host=c.host, port=c.puerto,
+                             username=c.usuario or None, password=c.password or None,
+                             use_tls=c.seguridad == 'tls', use_ssl=c.seguridad == 'ssl', timeout=20)
+        return con, c.remitente or c.usuario or settings.DEFAULT_FROM_EMAIL
+    return get_connection(), settings.DEFAULT_FROM_EMAIL
+
+
+def enviar_email(contacto, op, asunto, cuerpo, usuario=None, accion=None, difusion=None, plantilla=None,
+                 conexion=None):
+    """
+    Envía un email (manual, automático o de difusión) con seguimiento de apertura y clics, y lo registra en la ficha.
+    Los automáticos y las difusiones llevan link de baja (y el encabezado List-Unsubscribe).
+    """
     from apps.crm.models import Actividad
     envio = EmailEnviado.objects.create(accion=accion, oportunidad=op, contacto=contacto, para=contacto.email,
-                                        asunto=asunto[:200], token=secrets.token_urlsafe(24), enviado_por=usuario)
-    mail = EmailMultiAlternatives(asunto, cuerpo, settings.DEFAULT_FROM_EMAIL, [contacto.email],
+                                        asunto=asunto[:200], token=secrets.token_urlsafe(24), enviado_por=usuario,
+                                        difusion=difusion, plantilla=plantilla)
+    con, remitente = conexion or conexion_email()
+    con_baja = usuario is None
+    headers = {}
+    if con_baja:
+        url_baja = f'{settings.SITE_URL}/e/baja/{envio.token}/'
+        headers['List-Unsubscribe'] = f'<{url_baja}>'
+        cuerpo_txt = cuerpo + f'\n\n—\nSi no querés recibir más emails: {url_baja}'
+    else:
+        cuerpo_txt = cuerpo
+    mail = EmailMultiAlternatives(asunto, cuerpo_txt, remitente, [contacto.email], connection=con, headers=headers,
                                   reply_to=[usuario.email] if usuario is not None and usuario.email else None)
-    mail.attach_alternative(html_con_seguimiento(cuerpo, envio.token), 'text/html')
+    mail.attach_alternative(html_con_seguimiento(cuerpo, envio.token, con_baja=con_baja), 'text/html')
     mail.send(fail_silently=False)
+    origen = ' (difusión)' if difusion else ' automático' if usuario is None else ''
     Actividad.objects.create(contacto=contacto, oportunidad=op, tipo=Actividad.TIPO_EMAIL, usuario=usuario,
-                             texto=f'Email{" automático" if usuario is None else ""}: {asunto}\n{cuerpo[:500]}')
+                             texto=f'Email{origen}: {asunto}\n{cuerpo[:500]}')
     return envio
 
 
-def html_con_seguimiento(cuerpo, token):
-    """Cuerpo del email en HTML con los links redirigidos (clics) y un píxel invisible (aperturas)."""
+def html_con_seguimiento(cuerpo, token, con_baja=False):
+    """Cuerpo del email en HTML con los links redirigidos (clics), un píxel invisible (aperturas) y link de baja."""
     import re
     from django.core import signing
     from django.utils.html import urlize
@@ -40,6 +68,9 @@ def html_con_seguimiento(cuerpo, token):
         firmado = signing.dumps(m.group(1), salt='email-clic')
         return f'href="{base}/e/c/{token}/?u={firmado}"'
     html = re.sub(r'href="(https?://[^"]+)"', redirigir, urlize(linebreaks(escape(cuerpo))))
+    if con_baja:
+        html += (f'<p style="margin-top:28px;font-size:12px;color:#888">Si no querés recibir más emails, '
+                 f'<a href="{base}/e/baja/{token}/" style="color:#888">date de baja acá</a>.</p>')
     return html + f'<img src="{base}/e/o/{token}.gif" width="1" height="1" alt="" style="display:block;border:0">'
 
 
@@ -184,7 +215,27 @@ def ejecutar(ejecucion_id):
         logger.exception('Error ejecutando automatización %s sobre oportunidad #%s', accion, op.pk)
         estado, detalle = EjecucionAccion.ESTADO_ERROR, str(e)[:500]
     EjecucionAccion.objects.filter(pk=ejec.pk).update(estado=estado, detalle=detalle[:500])
+    if estado == EjecucionAccion.ESTADO_EJECUTADA:
+        _programar_siguientes(accion, ejec)
     return estado
+
+
+def _programar_siguientes(accion, ejec):
+    """Secuencias: las automatizaciones "Después de <esta>" se programan con su demora desde ahora."""
+    siguientes = AccionEtapa.objects.filter(accion_previa=accion, activa=True, disparador=AccionEtapa.DISP_DESPUES_DE)
+    ahora = timezone.now()
+    op = ejec.oportunidad
+    for sig in siguientes:
+        cuando = ahora + timedelta(minutes=sig.demora_minutos)
+        if sig.solo_en_horario:
+            cuando = proxima_apertura(op.embudo, cuando)
+        try:
+            with transaction.atomic():
+                nueva = EjecucionAccion.objects.create(accion=sig, oportunidad=op, historial=ejec.historial,
+                                                       programada_para=cuando)
+        except IntegrityError:
+            continue
+        _encolar(nueva, cuando, ahora)
 
 
 def _correr(accion, op, ejec_desde=None):
@@ -218,9 +269,12 @@ def _correr(accion, op, ejec_desde=None):
     if accion.tipo == AccionEtapa.TIPO_EMAIL:
         if not contacto.email or contacto.no_contactar:
             return E.ESTADO_OMITIDA, 'Sin email o contacto marcado como "no contactar".'
-        cuerpo = reemplazar_variables_texto(accion.texto, contacto, op)
-        asunto = reemplazar_variables_texto(accion.email_asunto or op.embudo.nombre, contacto, op)
-        enviar_email(contacto, op, asunto, cuerpo, accion=accion)
+        if contacto.no_email:
+            return E.ESTADO_OMITIDA, 'El contacto se dio de baja de los emails.'
+        pe = accion.plantilla_email
+        cuerpo = reemplazar_variables_texto(pe.cuerpo if pe else accion.texto, contacto, op)
+        asunto = reemplazar_variables_texto((pe.asunto if pe else accion.email_asunto) or op.embudo.nombre, contacto, op)
+        enviar_email(contacto, op, asunto, cuerpo, accion=accion, plantilla=pe)
         return E.ESTADO_EJECUTADA, f'Email enviado a {contacto.email}'
 
     titulo = reemplazar_variables_texto(accion.tarea_titulo or accion.nombre, contacto, op)

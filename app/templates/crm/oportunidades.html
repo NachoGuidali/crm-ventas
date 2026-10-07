@@ -86,6 +86,7 @@
         <option value="reanudar">Reactivar</option>
         <option value="etiqueta">Agregar etiqueta</option>
         {% if 'discador' in perms_crm %}<option value="campania">Cargar al discador</option>{% endif %}
+        {% if 'difusiones' in perms_crm %}<option value="difusion">Enviar difusión (email / WhatsApp)…</option>{% endif %}
         {% if 'eliminar' in perms_crm %}<option value="eliminar">Eliminar</option>{% endif %}
       </select>
       <select name="destino_agente" class="form-select form-select-sm opc opc-reasignar" style="display:none;max-width:220px"><option value="">¿A quién?</option><option value="auto">Automático (regla del embudo)</option>{% for a in agentes %}<option value="{{ a.pk }}">{{ a.display_name }}</option>{% endfor %}</select>

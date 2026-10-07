@@ -398,6 +398,9 @@ class Contacto(models.Model):
     no_contactar = models.BooleanField(default=False, db_index=True, verbose_name='No contactar',
                                        help_text='Pidió no recibir comunicaciones: se bloquean mensajes y discador.')
     no_contactar_desde = models.DateTimeField(null=True, blank=True)
+    no_email = models.BooleanField(default=False, verbose_name='No recibir emails masivos',
+                                   help_text='Se dio de baja desde un email: no recibe difusiones ni emails automáticos.')
+    no_email_at = models.DateTimeField(null=True, blank=True)
     telefono_invalido = models.BooleanField(default=False, verbose_name='Teléfono inválido')
 
     creado_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')

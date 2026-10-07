@@ -17,7 +17,7 @@ class AccionForm(forms.ModelForm):
 
     class Meta:
         model = AccionEtapa
-        fields = ['nombre', 'etapa', 'disparador', 'tipo', 'mover_a', 'tipificacion', 'activa', 'solo_si_sigue_en_etapa', 'solo_en_horario', 'plantilla', 'texto',
+        fields = ['nombre', 'etapa', 'disparador', 'accion_previa', 'tipo', 'mover_a', 'tipificacion', 'plantilla_email', 'activa', 'solo_si_sigue_en_etapa', 'solo_en_horario', 'plantilla', 'texto',
                   'linea', 'email_asunto', 'tarea_titulo', 'tarea_vence_horas', 'modo_embudo', 'embudo_destino',
                   'etapa_destino', 'volver_a', 'asignar_destino', 'usuario_destino']
         widgets = {'texto': forms.Textarea(attrs={'rows': 4})}
@@ -25,9 +25,16 @@ class AccionForm(forms.ModelForm):
     def __init__(self, *args, embudo=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.embudo = embudo
+        self.fields['etapa'].required = False
+        from .models import PlantillaEmail
+        self.fields['plantilla_email'].queryset = PlantillaEmail.objects.filter(activa=True)
+        self.fields['accion_previa'].queryset = AccionEtapa.objects.none()
         if embudo is not None:
             self.fields['etapa'].queryset = embudo.etapas.order_by('orden')
             self.fields['mover_a'].queryset = embudo.etapas.order_by('orden')
+            self.fields['accion_previa'].queryset = (AccionEtapa.objects.filter(embudo=embudo)
+                                                     .exclude(pk=self.instance.pk).select_related('etapa'))
+            self.fields['accion_previa'].label_from_instance = lambda a: f'{a.etapa} · {a.nombre}'
             from django.db.models import Q as _Q
             from apps.crm.models import Tipificacion
             self.fields['tipificacion'].queryset = Tipificacion.objects.filter(
@@ -59,9 +66,18 @@ class AccionForm(forms.ModelForm):
             self.add_error('plantilla', 'Elegí una plantilla o escribí un texto.')
         if tipo == AccionEtapa.TIPO_SMS and not d.get('texto'):
             self.add_error('texto', 'Escribí el texto del SMS.')
-        if tipo == AccionEtapa.TIPO_EMAIL and not d.get('texto'):
-            self.add_error('texto', 'Escribí el cuerpo del email.')
+        if tipo == AccionEtapa.TIPO_EMAIL and not d.get('texto') and not d.get('plantilla_email'):
+            self.add_error('plantilla_email', 'Elegí una plantilla de email o escribí asunto y texto.')
         disp = d.get('disparador')
+        if disp == AccionEtapa.DISP_DESPUES_DE:
+            if not d.get('accion_previa'):
+                self.add_error('accion_previa', 'Elegí después de qué automatización.')
+            else:
+                d['etapa'] = d['accion_previa'].etapa  # la secuencia vive en la misma etapa
+        elif not d.get('etapa'):
+            self.add_error('etapa', 'Elegí la etapa.')
+        if tipo == AccionEtapa.TIPO_EMAIL and d.get('plantilla_email'):
+            self._errors.pop('texto', None)
         if disp in (AccionEtapa.DISP_SIN_RESPUESTA, AccionEtapa.DISP_SIN_ACTIVIDAD) and not d.get('demora_valor'):
             self.add_error('demora_valor', 'Indicá cuánto tiempo esperar.')
         if tipo == AccionEtapa.TIPO_ETAPA:
@@ -85,6 +101,8 @@ class AccionForm(forms.ModelForm):
         return d
 
     def save(self, commit=True):
+        if self.cleaned_data.get('etapa') is not None:
+            self.instance.etapa = self.cleaned_data['etapa']
         factor = {'min': 1, 'h': 60, 'd': 1440}[self.cleaned_data.get('demora_unidad') or 'min']
         self.instance.demora_minutos = (self.cleaned_data.get('demora_valor') or 0) * factor
         if self.embudo is not None:
@@ -138,9 +156,11 @@ class AccionEditarView(PermisoRequeridoMixin, View):
 
     def _render(self, request, accion, embudo, form):
         from apps.whatsapp.models import Plantilla
+        from .models import PlantillaEmail
         return render(request, 'automatizaciones/form.html', {
             'accion': accion, 'embudo': embudo, 'form': form,
             'plantillas_texto': json.dumps({str(p.pk): p.cuerpo for p in Plantilla.objects.filter(activa=True)}).replace('</', '<\\/'),
+            'plantillas_email_texto': json.dumps({str(p.pk): f'{p.asunto}\n\n{p.cuerpo}' for p in PlantillaEmail.objects.filter(activa=True)}).replace('</', '<\\/'),
         })
 
 

@@ -18,11 +18,13 @@ class AccionEtapa(models.Model):
     DISP_SIN_RESPUESTA = 'sin_respuesta'
     DISP_RESPUESTA = 'respuesta'
     DISP_SIN_ACTIVIDAD = 'sin_actividad'
+    DISP_DESPUES_DE = 'despues_de'
     DISPARADORES = [
         (DISP_ENTRADA, 'Al entrar a la etapa'),
         (DISP_SIN_RESPUESTA, 'Si el cliente no responde (en el tiempo de demora desde que entró a la etapa)'),
         (DISP_RESPUESTA, 'Cuando el cliente responde (WhatsApp o llamada atendida) estando en la etapa'),
         (DISP_SIN_ACTIVIDAD, 'Si no hay ninguna actividad durante el tiempo de demora'),
+        (DISP_DESPUES_DE, 'Después de que se ejecutó otra automatización (secuencia)'),
     ]
     TIPO_CHOICES = [
         (TIPO_WHATSAPP, 'Enviar WhatsApp al prospecto'),
@@ -75,7 +77,11 @@ class AccionEtapa(models.Model):
                                                    'Variables: {nombre} {primer_nombre} {agente} {embudo} {etapa}')
     linea = models.ForeignKey('whatsapp.LineaWhatsApp', null=True, blank=True, on_delete=models.SET_NULL,
                               related_name='+', help_text='Vacío = la del chat existente o la del embudo.')
+    accion_previa = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='siguientes',
+                                      verbose_name='Después de la automatización')
     # Email
+    plantilla_email = models.ForeignKey('PlantillaEmail', null=True, blank=True, on_delete=models.SET_NULL,
+                                        related_name='+', verbose_name='Plantilla de email')
     email_asunto = models.CharField(max_length=200, blank=True)
     # Tarea
     tarea_titulo = models.CharField(max_length=200, blank=True)
@@ -167,6 +173,9 @@ class EmailEnviado(models.Model):
     oportunidad = models.ForeignKey('crm.Oportunidad', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     contacto = models.ForeignKey('crm.Contacto', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     enviado_por = models.ForeignKey('users.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    difusion = models.ForeignKey('Difusion', null=True, blank=True, on_delete=models.SET_NULL, related_name='emails')
+    plantilla = models.ForeignKey('PlantillaEmail', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    baja_at = models.DateTimeField(null=True, blank=True)
     para = models.EmailField()
     asunto = models.CharField(max_length=200)
     token = models.CharField(max_length=40, unique=True)
@@ -178,3 +187,92 @@ class EmailEnviado(models.Model):
 
     class Meta:
         ordering = ['-enviado_at']
+
+
+
+class PlantillaEmail(models.Model):
+    """Email reutilizable: en la ficha, en automatizaciones y en difusiones. Variables: {nombre} {primer_nombre}…"""
+    nombre = models.CharField(max_length=120, unique=True)
+    asunto = models.CharField(max_length=200)
+    cuerpo = models.TextField(help_text='Texto del email. Los links se miden solos. Variables: {nombre} {primer_nombre} '
+                                        '{agente} {embudo} {etapa} y los campos personalizados.')
+    activa = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+
+
+class ConfigEmail(models.Model):
+    """Servidor de correo (SMTP) configurable desde la pantalla. Si está inactivo se usa el del archivo .env."""
+    activo = models.BooleanField(default=False, verbose_name='Usar esta configuración')
+    host = models.CharField(max_length=200, blank=True, verbose_name='Servidor SMTP')
+    puerto = models.PositiveIntegerField(default=587)
+    usuario = models.CharField(max_length=200, blank=True)
+    password = models.CharField(max_length=300, blank=True, verbose_name='Contraseña')
+    seguridad = models.CharField(max_length=5, default='tls', choices=[('tls', 'STARTTLS (587)'), ('ssl', 'SSL (465)'),
+                                                                      ('', 'Ninguna')])
+    remitente = models.CharField(max_length=200, blank=True, verbose_name='Remitente',
+                                 help_text='Ej: "Roisa Ventas <ventas@roisa.com.ar>". Tiene que estar autorizado en el servidor.')
+    por_minuto = models.PositiveSmallIntegerField(default=30, verbose_name='Emails por minuto en difusiones',
+                                                  help_text='Gmail: no más de ~500 por día. Brevo / SES / Mailgun: más.')
+
+    class Meta:
+        verbose_name = 'Configuración de email'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class Difusion(models.Model):
+    """Envío masivo a un grupo de leads (elegidos con los filtros de la lista), por email o WhatsApp."""
+    CANAL_EMAIL = 'email'
+    CANAL_WHATSAPP = 'whatsapp'
+    CANALES = [(CANAL_EMAIL, 'Email'), (CANAL_WHATSAPP, 'WhatsApp')]
+    BORRADOR, PROGRAMADA, ENVIANDO, FINALIZADA, CANCELADA = 'borrador', 'programada', 'enviando', 'finalizada', 'cancelada'
+    ESTADOS = [(BORRADOR, 'Borrador'), (PROGRAMADA, 'Programada'), (ENVIANDO, 'Enviando'), (FINALIZADA, 'Finalizada'),
+               (CANCELADA, 'Cancelada')]
+
+    nombre = models.CharField(max_length=150)
+    canal = models.CharField(max_length=10, choices=CANALES, default=CANAL_EMAIL)
+    plantilla_email = models.ForeignKey(PlantillaEmail, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    plantilla_wa = models.ForeignKey('whatsapp.Plantilla', null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name='+', verbose_name='Plantilla de WhatsApp')
+    texto_wa = models.TextField(blank=True, verbose_name='Texto (solo líneas no oficiales, sin plantilla)')
+    linea = models.ForeignKey('whatsapp.LineaWhatsApp', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+                              help_text='Vacío = la del chat existente o la del embudo de cada lead.')
+    estado = models.CharField(max_length=12, choices=ESTADOS, default=BORRADOR, db_index=True)
+    programada_para = models.DateTimeField(null=True, blank=True)
+    descripcion_filtro = models.CharField(max_length=500, blank=True)
+    creada_por = models.ForeignKey('users.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    iniciada_at = models.DateTimeField(null=True, blank=True)
+    finalizada_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.nombre
+
+
+class DifusionDestinatario(models.Model):
+    PENDIENTE, ENVIADO, OMITIDO, ERROR = 'pendiente', 'enviado', 'omitido', 'error'
+    ESTADOS = [(PENDIENTE, 'Pendiente'), (ENVIADO, 'Enviado'), (OMITIDO, 'Omitido'), (ERROR, 'Error')]
+    difusion = models.ForeignKey(Difusion, on_delete=models.CASCADE, related_name='destinatarios')
+    contacto = models.ForeignKey('crm.Contacto', on_delete=models.CASCADE, related_name='+')
+    oportunidad = models.ForeignKey('crm.Oportunidad', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    estado = models.CharField(max_length=10, choices=ESTADOS, default=PENDIENTE, db_index=True)
+    detalle = models.CharField(max_length=300, blank=True)
+    mensaje = models.ForeignKey('whatsapp.Mensaje', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    email = models.ForeignKey(EmailEnviado, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    enviado_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['difusion', 'contacto'], name='difusion_contacto_unico')]
+        indexes = [models.Index(fields=['difusion', 'estado'])]

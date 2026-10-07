@@ -166,3 +166,128 @@ class DisparadoresTests(TestCase):
         ejecutar(self._ultima(acc).pk)
         self.op.refresh_from_db()
         self.assertEqual((self.op.estado, self.op.tipificacion), ('perdida', tip))
+
+
+class CorreoYDifusionesTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command('setup_inicial', '--sin-admin', verbosity=0)
+        cls.embudo = Embudo.objects.get()
+        cls.ana = User.objects.create_user('ana5', password='x')
+        cls.embudo.agentes.set([cls.ana])
+        cls.jefa = User.objects.create_user('jefa5', password='x', rol=User.ROL_SUPERVISOR, email='jefa@x.com')
+
+    def setUp(self):
+        super().setUp()
+        from .models import PlantillaEmail
+        self.pe = PlantillaEmail.objects.create(nombre='Promo', asunto='Hola {primer_nombre}',
+                                                cuerpo='Mirá el plan https://ejemplo.com/plan')
+        self.ops = [crm.ingresar_prospecto({'telefono': f'11810000{i:02d}', 'nombre': f'Persona{i} X',
+                                            'email': f'p{i}@x.com' if i != 2 else ''}, self.embudo, 'web').oportunidad
+                    for i in range(4)]
+        self.client.force_login(self.jefa)
+
+    def crear_desde_lista(self):
+        r = self.client.post('/oportunidades/masivas/', {'accion': 'difusion', 'ids': [o.pk for o in self.ops]})
+        from .models import Difusion
+        dif = Difusion.objects.latest('pk')
+        self.assertRedirects(r, f'/automatizaciones/difusiones/{dif.pk}/')
+        return dif
+
+    def test_difusion_por_email_con_baja(self):
+        from django.core import mail
+        from .difusiones import tick
+        from .models import Difusion, EmailEnviado
+        dif = self.crear_desde_lista()
+        self.assertEqual(dif.destinatarios.count(), 4)
+        r = self.client.post(f'/automatizaciones/difusiones/{dif.pk}/', {'accion': 'enviar', 'nombre': 'Promo octubre',
+                                                                        'canal': 'email', 'plantilla_email': self.pe.pk})
+        self.assertEqual(r.status_code, 302)
+        tick()
+        dif.refresh_from_db()
+        self.assertEqual(dif.estado, Difusion.FINALIZADA)
+        self.assertEqual(len(mail.outbox), 3)  # el que no tiene email se omite
+        m = mail.outbox[0]
+        self.assertEqual(m.subject, 'Hola Persona0')
+        self.assertIn('List-Unsubscribe', m.extra_headers)
+        self.assertIn('/e/baja/', m.alternatives[0][0])
+        envio = EmailEnviado.objects.filter(difusion=dif).first()
+        self.client.logout()
+        self.assertContains(self.client.get(f'/e/baja/{envio.token}/'), 'Dejar de recibir')
+        self.client.post(f'/e/baja/{envio.token}/')
+        envio.contacto.refresh_from_db()
+        self.assertTrue(envio.contacto.no_email)
+        from .difusiones import resultados
+        r = resultados(dif)
+        self.assertEqual((r['enviados'], r['omitidos'], r['bajas']), (3, 1, 1))
+
+    def test_difusion_por_whatsapp(self):
+        from apps.whatsapp.models import LineaWhatsApp, Mensaje
+        from .difusiones import tick
+        LineaWhatsApp.objects.create(nombre='Demo', proveedor='demo')
+        dif = self.crear_desde_lista()
+        self.client.post(f'/automatizaciones/difusiones/{dif.pk}/', {'accion': 'enviar', 'nombre': 'WA', 'canal': 'whatsapp',
+                                                                     'texto_wa': 'Hola {primer_nombre}!'})
+        with mock.patch('apps.whatsapp.proveedores.demo.ProveedorDemo._quizas_responder'):
+            tick()
+        self.assertEqual(Mensaje.objects.filter(direccion='out').count(), 4)
+        self.assertEqual(Mensaje.objects.filter(contenido='Hola Persona1!').count(), 1)
+
+    def test_borrador_sin_mensaje_no_sale_y_cancelar(self):
+        from .models import Difusion
+        dif = self.crear_desde_lista()
+        r = self.client.post(f'/automatizaciones/difusiones/{dif.pk}/', {'accion': 'enviar', 'nombre': 'x', 'canal': 'email'})
+        self.assertContains(r, 'Elegí la plantilla de email')
+        self.client.post(f'/automatizaciones/difusiones/{dif.pk}/', {'accion': 'cancelar'})
+        dif.refresh_from_db()
+        self.assertEqual(dif.estado, Difusion.CANCELADA)
+
+    def test_agente_sin_permiso_no_crea_difusion(self):
+        self.client.force_login(self.ana)
+        r = self.client.post('/oportunidades/masivas/', {'accion': 'difusion', 'ids': [self.ops[0].pk]})
+        self.assertEqual(r.status_code, 403)
+
+    def test_config_email_desde_pantalla(self):
+        from .models import ConfigEmail
+        from .services import conexion_email
+        admin = User.objects.create_user('adm5', password='x', rol=User.ROL_ADMIN)
+        self.client.force_login(admin)
+        self.client.post('/automatizaciones/correo/', {'activo': 'on', 'host': 'smtp-relay.brevo.com', 'puerto': 587,
+                                                      'seguridad': 'tls', 'usuario': 'u', 'password': 'clave',
+                                                      'remitente': 'Ventas <v@x.com>', 'por_minuto': 40})
+        c = ConfigEmail.get()
+        self.assertEqual((c.host, c.password), ('smtp-relay.brevo.com', 'clave'))
+        self.client.post('/automatizaciones/correo/', {'activo': 'on', 'host': 'smtp-relay.brevo.com', 'puerto': 587,
+                                                      'seguridad': 'tls', 'usuario': 'u', 'password': '',
+                                                      'remitente': 'Ventas <v@x.com>', 'por_minuto': 40})
+        self.assertEqual(ConfigEmail.get().password, 'clave')  # vacío no la borra
+        con, remitente = conexion_email()
+        self.assertEqual((con.host, remitente), ('smtp-relay.brevo.com', 'Ventas <v@x.com>'))
+
+    def test_secuencia_despues_de_otra_automatizacion(self):
+        from .models import EjecucionAccion
+        etapa = self.embudo.etapa_inicial
+        a1 = AccionEtapa.objects.create(embudo=self.embudo, etapa=etapa, nombre='Bienvenida', tipo='email',
+                                        plantilla_email=self.pe, solo_en_horario=False)
+        a2 = AccionEtapa.objects.create(embudo=self.embudo, etapa=etapa, nombre='Recordatorio', tipo='notif_agente',
+                                        disparador='despues_de', accion_previa=a1, demora_minutos=3 * 1440,
+                                        solo_en_horario=False)
+        op = crm.ingresar_prospecto({'telefono': '1181009999', 'nombre': 'Seq', 'email': 's@x.com'}, self.embudo, 'web').oportunidad
+        from apps.crm.models import HistorialEtapa
+        from .services import programar_acciones_de_etapa
+        programar_acciones_de_etapa(op.pk, HistorialEtapa.objects.filter(oportunidad=op).latest('pk').pk)
+        e1 = EjecucionAccion.objects.get(accion=a1, oportunidad=op)  # en tests Celery corre al instante
+        self.assertEqual(e1.estado, 'ejecutada', e1.detalle)
+        e2 = EjecucionAccion.objects.get(accion=a2, oportunidad=op)
+        self.assertEqual(e2.estado, 'programada')
+        self.assertAlmostEqual((e2.programada_para - timezone.now()).total_seconds(), 3 * 86400, delta=60)
+
+    def test_formulario_secuencia_toma_la_etapa(self):
+        from .views import AccionForm
+        a1 = AccionEtapa.objects.create(embudo=self.embudo, etapa=self.embudo.etapa_inicial, nombre='B', tipo='notif_agente')
+        f = AccionForm({'nombre': 'Seguimiento', 'disparador': 'despues_de', 'accion_previa': a1.pk, 'tipo': 'email',
+                        'plantilla_email': self.pe.pk, 'demora_valor': 3, 'demora_unidad': 'd', 'tarea_vence_horas': 24,
+                        'modo_embudo': 'crear', 'volver_a': 'misma', 'asignar_destino': 'mismo'}, embudo=self.embudo)
+        self.assertTrue(f.is_valid(), f.errors)
+        acc = f.save()
+        self.assertEqual((acc.etapa, acc.demora_minutos), (self.embudo.etapa_inicial, 3 * 1440))

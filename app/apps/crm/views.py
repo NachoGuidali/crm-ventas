@@ -367,6 +367,14 @@ class AccionesMasivasView(LoginRequiredMixin, View):
         if len(ids) > masivas.LIMITE_TOTAL:
             messages.error(request, f'Son más de {masivas.LIMITE_TOTAL:,} oportunidades: acotá los filtros.'.replace(',', '.'))
             return redirect(volver)
+        if accion == 'difusion':
+            if not user.tiene_permiso('difusiones'):
+                raise PermissionDenied
+            from apps.automatizaciones import difusiones
+            desc = request.POST.get('filtros_qs', '') if request.POST.get('todos_filtrados') == '1' else f'{len(ids)} seleccionadas'
+            dif = difusiones.crear(user, Oportunidad.objects.filter(pk__in=ids), descripcion=desc)
+            messages.success(request, f'Difusión creada con {dif.destinatarios.count()} personas. Elegí el mensaje y enviala.')
+            return redirect('automatizaciones:difusion', pk=dif.pk)
         try:
             masivas.validar(user, accion, datos)
         except crm.ErrorNegocio as e:
@@ -425,6 +433,11 @@ def contexto_chat(request, contacto, oportunidad=None):
     }
 
 
+def _plantillas_email():
+    from apps.automatizaciones.models import PlantillaEmail
+    return list(PlantillaEmail.objects.filter(activa=True).values('pk', 'nombre', 'asunto', 'cuerpo'))
+
+
 def _sms_operativo():
     from apps.integraciones.models import ConfigSMS
     return bool(ConfigSMS.get().operativo)
@@ -447,6 +460,7 @@ class OportunidadDetalleView(LoginRequiredMixin, View):
             'op': op, 'contacto': contacto, 'etapas': etapas_de(op.embudo),
             'tipificaciones': tipificaciones_de(op.embudo), 'actividades': actividades,
             'filtros_actividad': FILTROS_ACTIVIDAD, 'sms_activo': _sms_operativo(),
+            'plantillas_email': _plantillas_email(),
             'tareas': op.tareas.filter(estado=Tarea.ESTADO_PENDIENTE).select_related('asignado_a').order_by('vence_at'),
             'otras': contacto.oportunidades.exclude(pk=op.pk).select_related('embudo', 'etapa', 'agente'),
             'llamadas': contacto.llamadas.select_related('agente').order_by('-inicio_at')[:30],
@@ -564,9 +578,11 @@ class AccionOportunidadView(LoginRequiredMixin, View):
         asunto, cuerpo = (data.get('asunto') or '').strip(), (data.get('cuerpo') or '').strip()
         if not asunto or not cuerpo:
             return error('Completá el asunto y el mensaje.')
+        from apps.automatizaciones.models import PlantillaEmail
+        plantilla = PlantillaEmail.objects.filter(pk=data.get('plantilla') or 0).first()
         try:
             enviar_email(contacto, op, reemplazar_variables_texto(asunto, contacto, op),
-                         reemplazar_variables_texto(cuerpo, contacto, op), usuario=user)
+                         reemplazar_variables_texto(cuerpo, contacto, op), usuario=user, plantilla=plantilla)
         except Exception as e:  # SMTP caído, dirección rechazada…
             return error(f'No se pudo enviar el email: {e}')
         crm.tocar(op)

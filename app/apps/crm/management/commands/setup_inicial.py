@@ -75,7 +75,7 @@ ROLES = [
     ('Supervisor de ventas', 'Ve todo el embudo, reasigna, importa bases y gestiona el discador.',
      ['ver_todo', 'supervision', 'reportes', 'reasignar', 'importar', 'exportar', 'reabrir', 'discador']),
     ('Comercial / Marketing', 'Mide resultados y administra mensajes y automatizaciones.',
-     ['ver_todo', 'reportes', 'exportar', 'plantillas', 'automatizaciones', 'embudos', 'campos', 'pautas']),
+     ['ver_todo', 'reportes', 'exportar', 'plantillas', 'automatizaciones', 'embudos', 'campos', 'pautas', 'difusiones']),
 ]
 
 RESPUESTAS_RAPIDAS = [
