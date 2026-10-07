@@ -1142,15 +1142,25 @@ class SupervisionView(PermisoRequeridoMixin, View):
                             .values_list('agente', 'n'))
         wa = dict(Conversacion.objects.filter(archivada=False, no_leidos__gt=0).values_list('agente')
                   .annotate(n=Count('pk')).values_list('agente', 'n'))
+        from django.db.models import Max
+        from apps.users.models import SesionConexion
+        online = presencia.conectados(ids)
+        ultima_vez = dict(SesionConexion.objects.filter(usuario_id__in=ids).values_list('usuario')
+                          .annotate(u=Max('ultimo')).values_list('usuario', 'u'))
+        sesion_desde = dict(SesionConexion.objects.filter(usuario_id__in=online, fin__isnull=True,
+                                                          ultimo__gte=ahora - timedelta(minutes=10))
+                            .values_list('usuario').annotate(i=Max('inicio')).values_list('usuario', 'i'))
         filas = []
         for a in User.objects.filter(pk__in=ids, is_active=True).order_by('first_name', 'username'):
             r = por_agente.get(a.pk, {})
             a.abiertas, a.sin_gestion, a.ventas_mes = r.get('abiertas', 0), r.get('sin_gestion', 0), r.get('ventas_mes', 0)
             a.tareas_vencidas = vencidas.get(a.pk, 0)
             filas.append({'u': a, 'en_llamada': a.pk in en_llamada, 'llamadas_hoy': llamadas_hoy.get(a.pk, 0),
-                          'wa': wa.get(a.pk, 0)})
+                          'wa': wa.get(a.pk, 0), 'online': a.pk in online, 'desde': sesion_desde.get(a.pk),
+                          'ultima_vez': ultima_vez.get(a.pk)})
+        filas.sort(key=lambda f: (not f['online'], f['u'].display_name.lower()))
         return render(request, 'crm/supervision.html', {
-            'embudo': embudo, 'embudos': embudos, 'filas': filas,
+            'embudo': embudo, 'embudos': embudos, 'filas': filas, 'n_online': sum(1 for f in filas if f['online']),
             'sin_asignar': ops.filter(agente__isnull=True, estado=Oportunidad.ESTADO_ABIERTA).count(),
             'sla_vencidos': ops.filter(crm.q_sla_vencido()).count() if embudo and embudo.sla_minutos else None,
             'wa_sin_asignar': Conversacion.objects.filter(agente__isnull=True, archivada=False).exclude(
