@@ -115,3 +115,16 @@ class PresenciaPorPestanasTests(TestCase):
         self.client.get('/pulso/', {'tab': 'T1'})
         self.assertIn(u.pk, presencia.conectados([u.pk]))
         self.assertEqual(self.client.post('/pulso/salir/', {'tab': 'T1'}).status_code, 204)
+
+
+class AusenteTests(TestCase):
+    def test_ausente_es_informativo(self):
+        from core import presencia
+        u = User.objects.create_user('aus', password='x')
+        self.client.force_login(u)
+        self.client.get('/pulso/', {'tab': 'T', 'sin_uso': 20 * 60})   # 20 min sin tocar el CRM
+        self.assertIn(u.pk, presencia.ausentes([u.pk]))
+        self.assertIn(u.pk, presencia.conectados([u.pk]))             # sigue contando para el reparto
+        self.assertNotIn(u.pk, presencia.ausentes([u.pk], en_llamada={u.pk}))  # en llamada nunca ausente
+        self.client.get('/pulso/', {'tab': 'T', 'sin_uso': 3})          # movió el mouse
+        self.assertEqual(presencia.ausentes([u.pk]), {})

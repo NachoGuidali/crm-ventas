@@ -139,8 +139,22 @@
   });
   // Volvió a la página desde el historial (atrás/adelante): avisar enseguida que sigue acá.
   window.addEventListener('pageshow', e => { if (e.persisted && document.body.dataset.auth === '1') pulso(); });
+  // Último uso del CRM (mouse, teclado, clics), compartido entre pestañas: para el estado "Ausente" en Supervisión.
+  let usoLocal = Date.now();
+  const marcarUso = () => {
+    const ahora = Date.now();
+    if (ahora - usoLocal < 5000) return;
+    usoLocal = ahora;
+    try { localStorage.setItem('crm_uso', String(ahora)); } catch (e) {}
+  };
+  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart', 'focus'].forEach(ev => window.addEventListener(ev, marcarUso, {passive: true}));
+  const segundosSinUso = () => {
+    let ultimo = usoLocal;
+    try { ultimo = Math.max(ultimo, parseInt(localStorage.getItem('crm_uso') || '0')); } catch (e) {}
+    return Math.max(0, Math.round((Date.now() - ultimo) / 1000));
+  };
   function pulso() {
-    api('/pulso/?tab=' + encodeURIComponent(tabId), {silencioso: true}).then(d => {
+    api('/pulso/?tab=' + encodeURIComponent(tabId) + '&sin_uso=' + segundosSinUso(), {silencioso: true}).then(d => {
       setBadge('badgeNotif', d.notif); setBadge('badgeTareas', d.tareas); setBadge('badgeWa', d.wa);
       if (prevNotif !== null && d.notif > prevNotif) sonido();
       prevNotif = d.notif;

@@ -25,6 +25,43 @@ def _vivas(tabs, ahora):
     return {t: ts for t, ts in tabs.items() if ts > ahora}
 
 
+def ausente_minutos():
+    from django.conf import settings
+    return getattr(settings, 'PRESENCIA_AUSENTE_MINUTOS', 15)
+
+
+def registrar_uso(user, segundos_sin_uso):
+    """El navegador informa hace cuánto no se toca el CRM (mouse, teclado, clics) en ninguna pestaña."""
+    import time
+    try:
+        seg = max(0, int(float(segundos_sin_uso)))
+    except (TypeError, ValueError):
+        return
+    ultimo_uso = time.time() - seg
+    clave = f'presencia:uso:{user.pk}'
+    anterior = cache.get(clave) or 0
+    if ultimo_uso > anterior + 1:
+        cache.set(clave, ultimo_uso, 60 * 60 * 12)
+
+
+def ausentes(ids, en_llamada=()):
+    """{user_id: datetime del último uso} de los conectados que no tocan el CRM hace más de N minutos.
+    Quien está en una llamada nunca figura ausente. No cambia el reparto: es solo informativo."""
+    import time
+    from datetime import datetime, timezone as dt_tz
+    ids = [i for i in ids if i not in set(en_llamada)]
+    if not ids:
+        return {}
+    limite = time.time() - ausente_minutos() * 60
+    usos = cache.get_many([f'presencia:uso:{i}' for i in ids])
+    out = {}
+    for i in conectados(ids):
+        uso = usos.get(f'presencia:uso:{i}')
+        if uso and uso < limite:
+            out[i] = datetime.fromtimestamp(uso, tz=dt_tz.utc)
+    return out
+
+
 def marcar(user, tab=None):
     """
     Marca al usuario como conectado (cada pestaña late con su propio id). Si recién se conecta, abre la sesión y

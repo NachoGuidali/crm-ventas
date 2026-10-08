@@ -268,6 +268,8 @@ class PulsoView(LoginRequiredMixin, View):
         from core import presencia
         user = request.user
         presencia.marcar(user, request.GET.get('tab'))
+        if request.GET.get('sin_uso') is not None:
+            presencia.registrar_uso(user, request.GET.get('sin_uso'))
         data = {'notif': contar_no_leidas(user), 'tareas': contar_tareas_hoy(user),
                 'wa': contar_no_leidos_usuario(user), 'llamada': None}
         if usuario_tiene_interno(user):

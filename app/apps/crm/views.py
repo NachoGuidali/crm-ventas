@@ -1145,6 +1145,7 @@ class SupervisionView(PermisoRequeridoMixin, View):
         from django.db.models import Max
         from apps.users.models import SesionConexion
         online = presencia.conectados(ids)
+        ausentes = presencia.ausentes(online, en_llamada=en_llamada)
         ultima_vez = dict(SesionConexion.objects.filter(usuario_id__in=ids).values_list('usuario')
                           .annotate(u=Max('ultimo')).values_list('usuario', 'u'))
         sesion_desde = dict(SesionConexion.objects.filter(usuario_id__in=online, fin__isnull=True,
@@ -1157,10 +1158,12 @@ class SupervisionView(PermisoRequeridoMixin, View):
             a.tareas_vencidas = vencidas.get(a.pk, 0)
             filas.append({'u': a, 'en_llamada': a.pk in en_llamada, 'llamadas_hoy': llamadas_hoy.get(a.pk, 0),
                           'wa': wa.get(a.pk, 0), 'online': a.pk in online, 'desde': sesion_desde.get(a.pk),
+                          'ausente_desde': ausentes.get(a.pk),
                           'ultima_vez': ultima_vez.get(a.pk)})
         filas.sort(key=lambda f: (not f['online'], f['u'].display_name.lower()))
         return render(request, 'crm/supervision.html', {
-            'embudo': embudo, 'embudos': embudos, 'filas': filas, 'n_online': sum(1 for f in filas if f['online']),
+            'embudo': embudo, 'embudos': embudos, 'filas': filas, 'n_online': sum(1 for f in filas if f['online'] and not f['ausente_desde']),
+            'n_ausentes': sum(1 for f in filas if f['ausente_desde']), 'ausente_min': presencia.ausente_minutos(),
             'sin_asignar': ops.filter(agente__isnull=True, estado=Oportunidad.ESTADO_ABIERTA).count(),
             'sla_vencidos': ops.filter(crm.q_sla_vencido()).count() if embudo and embudo.sla_minutos else None,
             'wa_sin_asignar': Conversacion.objects.filter(agente__isnull=True, archivada=False).exclude(

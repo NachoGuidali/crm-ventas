@@ -203,6 +203,8 @@ EVOLUTION_API_KEY = env('EVOLUTION_API_KEY', '')
 CRM_API_KEY = env('CRM_API_KEY', '')
 
 LOG_RETENTION_DAYS = int(env('LOG_RETENTION_DAYS', '90'))
+# Supervisión: "Ausente" si tiene el CRM abierto pero no lo toca hace N minutos (no afecta el reparto de leads)
+PRESENCIA_AUSENTE_MINUTOS = int(env('PRESENCIA_AUSENTE_MINUTOS', '15'))
 
 LOGGING = {
     'version': 1,
