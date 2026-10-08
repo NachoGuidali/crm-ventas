@@ -88,3 +88,39 @@ class EmailYSMSDesdeLaFichaTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(self.op.actividades.filter(tipo='sms', texto__contains='sí!').exists())
         self.assertEqual(self.client.post('/integraciones/sms/webhook/malo/', {'From': '1', 'Body': 'x'}).status_code, 403)
+
+
+from django.test import override_settings  # noqa: E402
+
+
+@override_settings(DEMO_LANDING=True)
+class LandingDemoTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command('setup_inicial', '--sin-admin', verbosity=0)
+        cls.embudo = Embudo.objects.get()
+        cls.ana = User.objects.create_user('anal', password='x')
+        cls.embudo.agentes.set([cls.ana])
+
+    def test_formulario_crea_lead_asignado_y_avisa(self):
+        from apps.users.models import NotificacionInterna
+        self.assertContains(self.client.get('/demo/formulario/'), 'Landing Meta')
+        r = self.client.post('/demo/formulario/', {'nombre': 'Lucía Prueba', 'telefono': '11 2345-6789',
+                                                   'email': 'lu@x.com', 'consulta': 'plan familiar', 'origen': 'Landing Meta'})
+        self.assertRedirects(r, '/demo/gracias/')
+        op = Oportunidad.objects.get(contacto__telefono='+5491123456789')
+        self.assertEqual((op.origen, op.origen_pauta, op.agente), ('web', 'Landing Meta', self.ana))
+        self.assertTrue(op.actividades.filter(texto__contains='plan familiar').exists())
+        self.assertTrue(NotificacionInterna.objects.filter(destinatario=self.ana, tipo='asignacion').exists())
+        # Repetido: no duplica
+        self.client.post('/demo/formulario/', {'nombre': 'Lucía', 'telefono': '+54 9 11 2345 6789', 'origen': 'Landing Meta'})
+        self.assertEqual(Oportunidad.objects.filter(contacto__telefono='+5491123456789').count(), 1)
+
+    def test_bot_y_telefono_invalido(self):
+        self.client.post('/demo/formulario/', {'nombre': 'Bot', 'telefono': '1122223333', 'sitio': 'spam'})
+        self.assertFalse(Contacto.objects.filter(telefono='+5491122223333').exists())
+        self.assertContains(self.client.post('/demo/formulario/', {'nombre': 'X', 'telefono': 'abc'}), 'Revisá el número')
+
+    @override_settings(DEMO_LANDING=False)
+    def test_apagada_no_existe(self):
+        self.assertEqual(self.client.get('/demo/formulario/').status_code, 404)

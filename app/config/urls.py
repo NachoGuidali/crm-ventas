@@ -9,12 +9,15 @@ from django.views.decorators.csrf import csrf_exempt
 
 from apps.automatizaciones import views as auto_views
 from apps.automatizaciones import views_correo as auto_correo
+from apps.integraciones import landing
 from apps.reportes import views as reportes_views
 from apps.telefonia.urls import api_urlpatterns as api_telefonia
 
 urlpatterns = [
     path('', reportes_views.inicio, name='inicio'),
     path('pulso/', reportes_views.PulsoView.as_view(), name='pulso'),
+    path('demo/formulario/', landing.LandingView.as_view(), name='demo_formulario'),
+    path('demo/gracias/', landing.gracias, name='demo_gracias'),
     path('pulso/salir/', reportes_views.SalirPestanaView.as_view(), name='pulso_salir'),
     path('e/o/<str:token>.gif', auto_views.email_abierto, name='email_abierto'),
     path('e/c/<str:token>/', auto_views.email_clic, name='email_clic'),

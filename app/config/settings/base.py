@@ -204,6 +204,8 @@ CRM_API_KEY = env('CRM_API_KEY', '')
 
 LOG_RETENTION_DAYS = int(env('LOG_RETENTION_DAYS', '90'))
 # Supervisión: "Ausente" si tiene el CRM abierto pero no lo toca hace N minutos (no afecta el reparto de leads)
+# Landing de prueba pública en /demo/formulario/ (crea leads con origen "Landing Meta"). Apagada salvo DEMO_LANDING=1
+DEMO_LANDING = env_bool('DEMO_LANDING', False)
 PRESENCIA_AUSENTE_MINUTOS = int(env('PRESENCIA_AUSENTE_MINUTOS', '15'))
 
 LOGGING = {
