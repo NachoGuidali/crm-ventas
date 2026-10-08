@@ -5,7 +5,7 @@ from django.test import Client, override_settings
 
 from core.testing import TestCase
 
-from .models import RolPersonalizado, User
+from .models import RolPersonalizado, SesionConexion, User
 
 
 class AccesoTests(TestCase):
@@ -83,3 +83,35 @@ class PermisosTests(TestCase):
                                                   'modo_password': 'invitar', 'is_active': 'on'})
         self.assertEqual(r.status_code, 200)
         self.assertFalse(User.objects.filter(username='x2').exists())
+
+
+class PresenciaPorPestanasTests(TestCase):
+    def test_cerrar_la_ultima_pestana_desconecta_y_navegar_no(self):
+        import time
+        from unittest import mock
+        from core import presencia
+        u = User.objects.create_user('pres', password='x')
+        ahora = time.time()
+        with mock.patch('time.time', return_value=ahora):
+            presencia.marcar(u, 'A')
+            presencia.marcar(u, 'B')
+            presencia.salir_pestana(u, 'A')          # cerró una de dos: sigue en línea
+        self.assertIn(u.pk, presencia.conectados([u.pk]))
+        with mock.patch('time.time', return_value=ahora + 1):
+            presencia.salir_pestana(u, 'B')          # navega a otra página…
+            presencia.marcar(u, 'B')                 # …y la página nueva late enseguida
+        self.assertIn(u.pk, presencia.conectados([u.pk]))
+        self.assertEqual(SesionConexion.objects.filter(usuario=u).count(), 1)  # sin cortes de sesión
+        with mock.patch('time.time', return_value=ahora + 2):
+            presencia.salir_pestana(u, 'B')          # cerró la última
+        from django.core.cache import cache
+        self.assertLessEqual(cache._expire_info[cache.make_and_validate_key(f'presencia:{u.pk}')] - time.time(),
+                             presencia.GRACIA + 5)   # vence en segundos, no en minutos
+
+    def test_endpoint_salir(self):
+        from core import presencia
+        u = User.objects.create_user('pres2', password='x')
+        self.client.force_login(u)
+        self.client.get('/pulso/', {'tab': 'T1'})
+        self.assertIn(u.pk, presencia.conectados([u.pk]))
+        self.assertEqual(self.client.post('/pulso/salir/', {'tab': 'T1'}).status_code, 204)

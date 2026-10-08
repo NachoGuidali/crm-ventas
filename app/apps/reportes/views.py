@@ -267,9 +267,20 @@ class PulsoView(LoginRequiredMixin, View):
         from apps.whatsapp.services import contar_no_leidos_usuario
         from core import presencia
         user = request.user
-        presencia.marcar(user)
+        presencia.marcar(user, request.GET.get('tab'))
         data = {'notif': contar_no_leidas(user), 'tareas': contar_tareas_hoy(user),
                 'wa': contar_no_leidos_usuario(user), 'llamada': None}
         if usuario_tiene_interno(user):
             data['llamada'] = estado_llamada_json(llamada_activa(user))
         return JsonResponse(data)
+
+
+class SalirPestanaView(LoginRequiredMixin, View):
+    """La pestaña se cierra o cambia de página (navigator.sendBeacon al ocultarse)."""
+
+    def post(self, request):
+        from django.http import HttpResponse
+        from core import presencia
+        if request.POST.get('tab'):
+            presencia.salir_pestana(request.user, request.POST['tab'])
+        return HttpResponse(status=204)

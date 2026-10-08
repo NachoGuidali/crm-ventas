@@ -123,8 +123,24 @@
 
   /* ── Pulso: contadores + estado de llamada (un solo request liviano) ── */
   let pulsoTimer = null, llamadaActual = null, ultimaLlamadaId = null, relojTimer = null, prevNotif = null;
+  // Id de esta pestaña (se mantiene al navegar dentro del CRM): para saber si cerró la última pestaña abierta.
+  const tabId = (() => {
+    try {
+      let t = sessionStorage.getItem('crm_tab');
+      if (!t) { t = Math.random().toString(36).slice(2, 12); sessionStorage.setItem('crm_tab', t); }
+      return t;
+    } catch (e) { return 'x' + Math.random().toString(36).slice(2, 10); }
+  })();
+  // Al cerrar la pestaña (o pasar a otra página) se avisa: si no vuelve en unos segundos, queda desconectada.
+  window.addEventListener('pagehide', () => {
+    if (document.body.dataset.auth !== '1' || !navigator.sendBeacon) return;
+    const fd = new FormData(); fd.append('tab', tabId); fd.append('csrfmiddlewaretoken', csrf());
+    navigator.sendBeacon('/pulso/salir/', fd);
+  });
+  // Volvió a la página desde el historial (atrás/adelante): avisar enseguida que sigue acá.
+  window.addEventListener('pageshow', e => { if (e.persisted && document.body.dataset.auth === '1') pulso(); });
   function pulso() {
-    api('/pulso/', {silencioso: true}).then(d => {
+    api('/pulso/?tab=' + encodeURIComponent(tabId), {silencioso: true}).then(d => {
       setBadge('badgeNotif', d.notif); setBadge('badgeTareas', d.tareas); setBadge('badgeWa', d.wa);
       if (prevNotif !== null && d.notif > prevNotif) sonido();
       prevNotif = d.notif;

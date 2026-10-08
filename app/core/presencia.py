@@ -1,6 +1,7 @@
 """
 Presencia de usuarios ("conectados"): cada pantalla del CRM late cada 4–15 s (/pulso/); si un usuario no late en
-TTL segundos se lo considera desconectado. Vive en Redis, no toca la base.
+TTL segundos se lo considera desconectado. Al cerrar la pestaña, el navegador avisa (sendBeacon) y queda desconectado
+a los pocos segundos si no le queda otra pestaña abierta. Vive en Redis; las sesiones (para "tiempo conectado") en la base.
 """
 import logging
 
@@ -8,15 +9,33 @@ from django.core.cache import cache
 
 logger = logging.getLogger('apps.users')
 
-TTL = 240  # los navegadores espacian los timers de pestañas en segundo plano hasta ~1 min
+TTL = 150      # sin señal de ninguna pestaña en este tiempo = desconectado (compu suspendida, sin internet, etc.)
+GRACIA = 8     # al cerrar o cambiar de página: si la pestaña no vuelve a latir en estos segundos, se cerró
 
 
 def _clave(user_id):
     return f'presencia:{user_id}'
 
 
-def marcar(user):
-    """Marca al usuario como conectado. Si recién se conecta, reparte los prospectos que esperaban a alguien."""
+def _tabs(user_id):
+    return cache.get(f'presencia:tabs:{user_id}') or {}
+
+
+def _vivas(tabs, ahora):
+    return {t: ts for t, ts in tabs.items() if ts > ahora}
+
+
+def marcar(user, tab=None):
+    """
+    Marca al usuario como conectado (cada pestaña late con su propio id). Si recién se conecta, abre la sesión y
+    reparte los prospectos que esperaban a alguien.
+    """
+    import time
+    ahora = time.time()
+    tabs = _vivas(_tabs(user.pk), ahora)
+    # Sin id de pestaña (versión vieja del script en caché): cuenta poco, para no dejarla "en línea" de más
+    tabs[tab or 'sin-id'] = ahora + (TTL if tab else 30)
+    cache.set(f'presencia:tabs:{user.pk}', tabs, TTL)
     if cache.add(_clave(user.pk), 1, TTL):
         _abrir_sesion(user)
         _al_conectarse()
@@ -26,8 +45,30 @@ def marcar(user):
     return False
 
 
+def salir_pestana(user, tab):
+    """
+    La pestaña se cerró o navegó a otra página del CRM. Se le da GRACIA segundos: si es una navegación, la página
+    nueva late enseguida y no pasa nada; si se cerró y no queda ninguna otra pestaña abierta, queda desconectada.
+    """
+    import time
+    ahora = time.time()
+    tabs = _vivas(_tabs(user.pk), ahora)
+    if tab in tabs:
+        tabs[tab] = ahora + GRACIA
+    vence = max(tabs.values(), default=ahora + GRACIA)
+    cache.set(f'presencia:tabs:{user.pk}', tabs, TTL)
+    restante = max(int(vence - ahora) + 1, 1)
+    cache.touch(_clave(user.pk), restante)  # la clave del usuario vence con su última pestaña
+    if not any(ts > ahora + GRACIA for ts in tabs.values()):
+        from django.utils import timezone
+        from apps.users.models import SesionConexion
+        sid = cache.get(f'presencia:sesion:{user.pk}')
+        if sid:
+            SesionConexion.objects.filter(pk=sid, fin__isnull=True).update(ultimo=timezone.now())
+
+
 def desconectar(user):
-    cache.delete(_clave(user.pk))
+    cache.delete_many([_clave(user.pk), f'presencia:tabs:{user.pk}'])
     from django.utils import timezone
     from apps.users.models import SesionConexion
     sid = cache.get(f'presencia:sesion:{user.pk}')
@@ -45,8 +86,8 @@ def _abrir_sesion(user):
 
 
 def _registrar_pulso(user):
-    """Actualiza el "último pulso" de la sesión como mucho una vez por minuto (no escribe en cada pulso)."""
-    if not cache.add(f'presencia:pulso_db:{user.pk}', 1, 60):
+    """Actualiza el "último pulso" de la sesión como mucho una vez cada 30 s (no escribe en cada pulso)."""
+    if not cache.add(f'presencia:pulso_db:{user.pk}', 1, 30):
         return
     from django.utils import timezone
     from apps.users.models import SesionConexion

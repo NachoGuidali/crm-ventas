@@ -207,7 +207,7 @@ class CorreoYDifusionesTests(TestCase):
         dif.refresh_from_db()
         self.assertEqual(dif.estado, Difusion.FINALIZADA)
         self.assertEqual(len(mail.outbox), 3)  # el que no tiene email se omite
-        m = mail.outbox[0]
+        m = next(x for x in mail.outbox if x.to == ['p0@x.com'])  # el orden de envío no está garantizado
         self.assertEqual(m.subject, 'Hola Persona0')
         self.assertIn('List-Unsubscribe', m.extra_headers)
         self.assertIn('/e/baja/', m.alternatives[0][0])

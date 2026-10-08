@@ -15,6 +15,7 @@ from apps.telefonia.urls import api_urlpatterns as api_telefonia
 urlpatterns = [
     path('', reportes_views.inicio, name='inicio'),
     path('pulso/', reportes_views.PulsoView.as_view(), name='pulso'),
+    path('pulso/salir/', reportes_views.SalirPestanaView.as_view(), name='pulso_salir'),
     path('e/o/<str:token>.gif', auto_views.email_abierto, name='email_abierto'),
     path('e/c/<str:token>/', auto_views.email_clic, name='email_clic'),
     path('e/baja/<str:token>/', csrf_exempt(auto_correo.baja_email), name='email_baja'),

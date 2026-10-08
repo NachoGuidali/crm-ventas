@@ -45,9 +45,7 @@ class LoginView(View):
             return render(request, self.template_name, {'form': LoginForm(request), 'bloqueado': True})
         if form.is_valid():
             services.limpiar_login_fallido(username, ip)
-            login(request, form.get_user())
-            from core import presencia
-            presencia.marcar(request.user)
+            login(request, form.get_user())  # la presencia la marca la primera página (cada pestaña con su id)
             destino = request.GET.get('next', '')
             if not url_has_allowed_host_and_scheme(destino, {request.get_host()}, request.is_secure()):
                 destino = ''
