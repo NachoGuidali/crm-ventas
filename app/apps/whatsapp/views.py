@@ -230,8 +230,20 @@ class EnviarView(LoginRequiredMixin, View):
         if archivo:
             if archivo.size > MAX_ADJUNTO:
                 raise services.ErrorEnvio('El archivo supera los 16 MB.')
+            carpeta = f'whatsapp/salientes/{timezone.localdate():%Y/%m}/{uuid.uuid4().hex}'
+            if request.POST.get('voz') == '1':
+                # Nota de voz grabada en el navegador: se pasa a OGG/Opus para que llegue como audio de WhatsApp
+                from django.core.files.base import ContentFile
+                from .audio import ErrorAudio, a_ogg_opus
+                try:
+                    ogg = a_ogg_opus(archivo.read())
+                except ErrorAudio as e:
+                    raise services.ErrorEnvio(str(e))
+                ruta = default_storage.save(f'{carpeta}.ogg', ContentFile(ogg))
+                return services.enviar_mensaje(conv, request.user, archivo_url=settings.MEDIA_URL + ruta,
+                                               archivo_mime='audio/ogg', archivo_nombre='nota-de-voz.ogg')
             ext = os.path.splitext(archivo.name)[1].lower()[:8]
-            ruta = default_storage.save(f'whatsapp/salientes/{timezone.localdate():%Y/%m}/{uuid.uuid4().hex}{ext}', archivo)
+            ruta = default_storage.save(f'{carpeta}{ext}', archivo)
             url = settings.MEDIA_URL + ruta
             return services.enviar_mensaje(conv, request.user, texto=texto, archivo_url=url,
                                            archivo_mime=archivo.content_type or 'application/octet-stream',

@@ -41,6 +41,43 @@
     try { await enviar(fd); } catch (err) {}
   }));
 
+  // Nota de voz: grabar en el navegador y enviar (el servidor la pasa al formato de WhatsApp)
+  (function () {
+    const btn = form.querySelector('.btn-voz'), barra = form.parentElement.querySelector('.grabando');
+    if (!btn || !barra || !navigator.mediaDevices || !window.MediaRecorder) return;
+    btn.style.display = '';
+    let rec = null, partes = [], stream = null, inicio = 0, reloj = null, enviarAlTerminar = false;
+    const tipo = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    const mostrar = grabando => { form.style.display = grabando ? 'none' : ''; barra.style.display = grabando ? 'flex' : 'none'; };
+    const terminar = () => { clearInterval(reloj); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; mostrar(false); };
+    btn.addEventListener('click', async () => {
+      try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); }
+      catch (e) { CRM.toast('No se pudo usar el micrófono: permitilo en el navegador para este sitio.', 'error'); return; }
+      partes = []; enviarAlTerminar = false;
+      rec = new MediaRecorder(stream, tipo ? {mimeType: tipo} : undefined);
+      rec.ondataavailable = e => { if (e.data.size) partes.push(e.data); };
+      rec.onstop = async () => {
+        terminar();
+        if (!enviarAlTerminar || !partes.length) return;
+        const mime = rec.mimeType || tipo || 'audio/webm';
+        const fd = new FormData();
+        fd.append('archivo', new File([new Blob(partes, {type: mime})], 'nota-de-voz.' + (mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm'), {type: mime}));
+        fd.append('voz', '1');
+        const lin = form.querySelector('[name=linea]'); if (lin) fd.append('linea', lin.value);
+        try { await enviar(fd); } catch (err) { if (/24 h/.test(err.message)) document.getElementById('avisoVentana').style.display = ''; }
+      };
+      rec.start(); inicio = Date.now(); mostrar(true);
+      const t = barra.querySelector('.rec-t');
+      reloj = setInterval(() => {
+        const s = Math.floor((Date.now() - inicio) / 1000);
+        t.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        if (s >= 300) { enviarAlTerminar = true; rec.stop(); }  // tope 5 minutos
+      }, 250);
+    });
+    barra.querySelector('.rec-cancel').addEventListener('click', () => { enviarAlTerminar = false; if (rec && rec.state !== 'inactive') rec.stop(); else terminar(); });
+    barra.querySelector('.rec-send').addEventListener('click', () => { enviarAlTerminar = true; if (rec && rec.state !== 'inactive') rec.stop(); });
+  })();
+
   // Respuestas rápidas con "/"
   const rr = JSON.parse(document.getElementById('rr-data').textContent), menu = document.getElementById('rrMenu');
   let rrSel = 0, rrItems = [];

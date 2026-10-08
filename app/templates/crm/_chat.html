@@ -36,10 +36,10 @@
             {% for p in plantillas %}<a class="dropdown-item small" href="#" data-plantilla="{{ p.pk }}" style="white-space:normal"><b>{{ p.nombre }}</b><br><span class="muted">{{ p.cuerpo|truncatechars:90 }}</span></a>{% empty %}<span class="dropdown-item small muted">{% if linea_actual.es_oficial %}No hay plantillas aprobadas para esta línea{% else %}Sin plantillas{% endif %}</span>{% endfor %}
           </div>
         </div>
-        <label class="btn btn-outline-secondary btn-icon mb-0" title="Adjuntar archivo"><i class="bi bi-paperclip"></i><input type="file" name="archivo" hidden></label>
+        <button type="button" class="btn btn-outline-secondary btn-icon btn-voz" title="Grabar nota de voz" style="display:none"><i class="bi bi-mic"></i></button><label class="btn btn-outline-secondary btn-icon mb-0" title="Adjuntar archivo"><i class="bi bi-paperclip"></i><input type="file" name="archivo" hidden></label>
         <textarea name="texto" rows="1" class="form-control" placeholder="Escribí un mensaje… (/ para respuestas rápidas)"></textarea>
         <button class="btn btn-success btn-icon" title="Enviar"><i class="bi bi-send"></i></button>
-      </form>
+      </form><div class="grabando" style="display:none"><span class="rec-dot"></span> Grabando <b class="rec-t">0:00</b><button type="button" class="btn btn-sm btn-link text-danger rec-cancel" title="Cancelar"><i class="bi bi-trash"></i></button><button type="button" class="btn btn-success btn-icon rec-send" title="Enviar nota de voz"><i class="bi bi-send"></i></button></div>
       <div class="small muted mt-1" id="adjuntoNombre"></div>
     {% endif %}
   </div>

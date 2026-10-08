@@ -50,10 +50,10 @@
           <form id="chatForm" class="d-flex gap-2 align-items-end" enctype="multipart/form-data">
             <div class="dropdown"><button type="button" class="btn btn-outline-secondary btn-icon" data-bs-toggle="dropdown" title="Plantillas"><i class="bi bi-chat-square-text"></i></button>
               <div class="dropdown-menu" style="max-height:300px;overflow-y:auto;width:320px">{% for p in plantillas %}<a class="dropdown-item small" href="#" data-plantilla="{{ p.pk }}" style="white-space:normal"><b>{{ p.nombre }}</b><br><span class="muted">{{ p.cuerpo|truncatechars:90 }}</span></a>{% empty %}<span class="dropdown-item small muted">Sin plantillas</span>{% endfor %}</div></div>
-            <label class="btn btn-outline-secondary btn-icon mb-0" title="Adjuntar"><i class="bi bi-paperclip"></i><input type="file" name="archivo" hidden></label>
+            <button type="button" class="btn btn-outline-secondary btn-icon btn-voz" title="Grabar nota de voz" style="display:none"><i class="bi bi-mic"></i></button><label class="btn btn-outline-secondary btn-icon mb-0" title="Adjuntar"><i class="bi bi-paperclip"></i><input type="file" name="archivo" hidden></label>
             <textarea name="texto" rows="1" class="form-control" placeholder="Escribí un mensaje… (Enter envía, / respuestas rápidas)"></textarea>
             <button class="btn btn-success btn-icon"><i class="bi bi-send"></i></button>
-          </form>
+          </form><div class="grabando" style="display:none"><span class="rec-dot"></span> Grabando <b class="rec-t">0:00</b><button type="button" class="btn btn-sm btn-link text-danger rec-cancel" title="Cancelar"><i class="bi bi-trash"></i></button><button type="button" class="btn btn-success btn-icon rec-send" title="Enviar nota de voz"><i class="bi bi-send"></i></button></div>
           <div class="small muted mt-1" id="adjuntoNombre"></div>
         </div>
       </div>

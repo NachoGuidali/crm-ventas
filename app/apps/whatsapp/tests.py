@@ -200,3 +200,33 @@ class EnvioTests(WhatsAppBase):
         esperas = [reservar_turno(self.linea) for _ in range(3)]
         self.assertAlmostEqual(esperas[0], 0, delta=1)
         self.assertAlmostEqual(esperas[2], 20, delta=1)
+
+
+class NotaDeVozTests(WhatsAppBase):
+    def test_nota_de_voz_se_convierte_a_ogg_opus(self):
+        import shutil
+        import subprocess
+        import tempfile
+        from unittest import skipIf
+        if not shutil.which('ffmpeg'):
+            self.skipTest('ffmpeg no instalado')
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.core.files.storage import default_storage
+        with tempfile.NamedTemporaryFile(suffix='.webm') as f:  # como graba Chrome: WebM/Opus
+            subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1',
+                            '-c:a', 'libopus', f.name], check=True)
+            datos = open(f.name, 'rb').read()
+        demo = LineaWhatsApp.objects.create(nombre='Demo voz', proveedor='demo')
+        from apps.crm.services import ingresar_prospecto
+        c = ingresar_prospecto({'telefono': '1144447777', 'nombre': 'Voz'}, self.embudo, 'manual').contacto
+        cl = Client()
+        cl.force_login(self.agente)
+        with mock.patch('apps.whatsapp.proveedores.demo.ProveedorDemo._quizas_responder'), \
+                self.captureOnCommitCallbacks(execute=True):
+            r = cl.post('/whatsapp/enviar/', {'contacto': c.pk, 'linea': demo.pk, 'voz': '1',
+                                              'archivo': SimpleUploadedFile('nota.webm', datos, 'audio/webm')})
+        self.assertEqual(r.status_code, 200, r.content)
+        m = Mensaje.objects.get(direccion='out')
+        self.assertEqual((m.tipo, m.media_mime), ('audio', 'audio/ogg'))
+        ruta = m.media_url.replace(settings.MEDIA_URL, '', 1)
+        self.assertEqual(default_storage.open(ruta).read(4), b'OggS')
