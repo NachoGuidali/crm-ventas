@@ -24,8 +24,11 @@ Content-Type: application/json
 
 {"nombre": "María Gómez", "telefono": "11 5555-1234", "email": "maria@mail.com",
  "fecha_atencion": "15/09/2026", "especialidad_atencion": "Clínica",
- "fuente": "Sistema centro médico", "cualquier_otro_campo": "se guarda como dato extra"}</pre>
+ "fuente": "Sistema centro médico", "campania": "Día de la madre",
+ "etapa": "Contacto efectivo", "agente": "laura",
+ "cualquier_otro_campo": "se guarda como dato extra"}</pre>
 <p class="mb-1">Respuesta: <code>201</code> si creó la oportunidad, <code>200</code> si ya existía (con <code>motivo</code>: ya_activa / ya_cliente / no_contactar).</p>
+<p class="mb-1"><code>etapa</code> (nombre o id) y <code>agente</code> (usuario o email) son opcionales: sirven para que un bot o sistema externo cargue el lead ya calificado. Si el lead ya existía, se mueve a esa etapa (<code>"movida": true</code>).</p>
 <p class="mb-1 mt-2">Otros endpoints:</p>
 <ul class="mb-0"><li><code>GET /api/v1/leads/buscar/?telefono=…</code></li><li><code>POST /api/v1/whatsapp/enviar/</code> <span class="muted">{"telefono", "mensaje" o "plantilla", "linea"}</span></li></ul>
 </div></div></div>

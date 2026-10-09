@@ -13,6 +13,7 @@ import logging
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -107,7 +108,8 @@ class LeadCrearView(ApiBase):
         personalizados = {c.slug: c for c in CampoPersonalizado.activos() if not c.es_archivo}
         extra = {}
         for k, v in d.items():
-            if k in CAMPOS_LEAD | {'embudo', 'fuente', 'origen', 'valor', 'nota', *claves_pauta} or v in (None, ''):
+            if k in CAMPOS_LEAD | {'embudo', 'etapa', 'agente', 'fuente', 'origen', 'valor', 'nota', *claves_pauta} \
+                    or v in (None, ''):
                 continue
             if k in personalizados:
                 try:
@@ -119,12 +121,36 @@ class LeadCrearView(ApiBase):
         if extra:
             datos['datos_extra'] = extra
         origen = d.get('origen') if d.get('origen') in dict(Oportunidad.ORIGEN_CHOICES) else Oportunidad.ORIGEN_API
+        # Etapa inicial (id o nombre) y vendedor (usuario o email) opcionales: ej. el bot ya calificó al lead
+        etapa = agente = None
+        if d.get('etapa'):
+            from apps.crm.models import Etapa
+            etapas = Etapa.objects.filter(embudo=embudo, tipo=Etapa.TIPO_NORMAL)
+            etapa = (etapas.filter(pk=d['etapa']) if str(d['etapa']).isdigit()
+                     else etapas.filter(nombre__iexact=str(d['etapa']).strip())).first()
+            if etapa is None:
+                return self._resp(request, {'error': f'La etapa "{d["etapa"]}" no existe (abierta) en {embudo}',
+                                            'etapas': list(etapas.values_list('nombre', flat=True))}, 400)
+        if d.get('agente'):
+            from apps.users.models import User
+            agente = User.objects.filter(is_active=True).filter(
+                Q(username__iexact=str(d['agente'])) | Q(email__iexact=str(d['agente']))).first()
+            if agente is None:
+                return self._resp(request, {'error': f'No existe el usuario "{d["agente"]}"'}, 400)
         try:
             res = ingresar_prospecto(datos, embudo, origen,
                                      fuente=str(d.get('fuente') or (self.api_key.fuente if self.api_key else '') or 'API'),
-                                     origen_pauta=origen_pauta)
+                                     origen_pauta=origen_pauta, etapa=etapa, agente=agente)
         except ErrorNegocio as e:
             return self._resp(request, {'error': str(e)}, 400)
+        movida = False
+        if etapa is not None and res.motivo == 'ya_activa' and res.oportunidad.etapa_id != etapa.pk:
+            from apps.crm.services import mover_etapa
+            try:
+                movida = mover_etapa(res.oportunidad, etapa, None, nota='API', automatico=True) is not None
+            except ErrorNegocio:
+                movida = False
+            res.oportunidad.refresh_from_db()
         if d.get('nota') and res.oportunidad:
             from apps.crm.services import agregar_nota
             from apps.crm.models import Actividad
@@ -134,7 +160,7 @@ class LeadCrearView(ApiBase):
         return self._resp(request, {
             'ok': True, 'contacto_id': res.contacto.pk, 'contacto_nuevo': res.contacto_nuevo,
             'oportunidad_id': op.pk if op else None, 'oportunidad_nueva': res.oportunidad_nueva,
-            'motivo': res.motivo or None, 'etapa': str(op.etapa) if op else None,
+            'motivo': res.motivo or None, 'etapa': str(op.etapa) if op else None, 'movida': movida,
             'pauta': str(op.pauta) if op and op.pauta_id else None,
             'agente': op.agente.display_name if op and op.agente else None,
         }, 201 if res.oportunidad_nueva else 200)

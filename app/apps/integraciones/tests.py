@@ -30,6 +30,19 @@ class ApiLeadsTests(TestCase):
         r = self.post({'nombre': 'Ana', 'telefono': '+5491155550000'})
         self.assertEqual((r.status_code, r.json()['motivo']), (200, 'ya_activa'))
 
+    def test_alta_con_etapa_y_vendedor(self):
+        ana = User.objects.create_user('ana', password='x', email='ana@x.com')
+        r = self.post({'nombre': 'Ana', 'telefono': '1155550000', 'etapa': 'contacto efectivo', 'agente': 'ana@x.com'})
+        self.assertEqual(r.status_code, 201, r.content)
+        op = Oportunidad.objects.get()
+        self.assertEqual((op.etapa.nombre, op.agente), ('Contacto efectivo', ana))
+        r = self.post({'telefono': '1155550000', 'etapa': 'Negociación'})  # el lead ya existe: se mueve
+        self.assertTrue(r.json()['movida'])
+        self.assertEqual(Oportunidad.objects.get().etapa.nombre, 'Negociación')
+        r = self.post({'telefono': '1155550001', 'etapa': 'No existe'})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('Negociación', r.json()['etapas'])
+
     def test_clave_invalida(self):
         self.assertEqual(self.post({'telefono': '1'}, clave='mala').status_code, 401)
         self.key.activa = False
