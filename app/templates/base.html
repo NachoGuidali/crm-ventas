@@ -103,6 +103,11 @@
       </a>
       {% endif %}
       {% if 'embudos' in perms_crm %}
+      <a href="{% url 'crm:etiquetas' %}" class="nav-item {% if url_name == 'etiquetas' %}active{% endif %}">
+        <span class="nav-icon"><i class="bi bi-tags"></i></span> Etiquetas
+      </a>
+      {% endif %}
+      {% if 'embudos' in perms_crm %}
       <a href="{% url 'crm:puntaje' %}" class="nav-item {% if url_name == 'puntaje' %}active{% endif %}">
         <span class="nav-icon"><i class="bi bi-star-half"></i></span> Puntaje de leads
       </a>
