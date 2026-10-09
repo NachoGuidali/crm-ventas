@@ -40,3 +40,19 @@ Leyenda: ✅ ya está · 🔧 cambio chico (horas) · 🧩 desarrollo (días) ·
 2. **En paralelo:** demo limpio con usuarios para las operadoras.
 3. **Semana 2:** teléfono web (si Anura pasa los datos) · Mercado Pago · Instagram/Facebook (sujeto a aprobación de Meta).
 4. **A definir con ellos:** bot, carrito abandonado, Afimedes, Google/Meta Ads.
+
+---
+
+# Segunda charla (con Martín, "Integración CRM y gestión de leads", 09/10)
+
+| Pedido | Estado | Cómo |
+|---|---|---|
+| **Portal de Agentes** (auditoría médica + documentación → "Control OK / Aprobado") de vuelta al CRM | 🧩 ❓ | **Webhook de entrada** en el CRM para que el portal postee el estado (por ID del CRM o DNI) → mueve la tarjeta (ej. embudo "Afiliación": En auditoría → Aprobado / Rechazado). Alternativa: el CRM consulta el endpoint de reportes que están pidiendo al equipo del portal. Coordinar con ese equipo |
+| **Insertar leads por API con un estado definido** | 🔧 | La API ya crea leads y elige embudo; sumar `etapa` (y opcional `agente`) en el alta |
+| **Instagram**: separar socios (experiencia del socio) de interesados | 🧩 ❓ | Opción rápida: bot (n8n) en Instagram que pregunta y crea el lead en el CRM con su teléfono. Opción completa: Instagram dentro de la bandeja (API oficial de Meta) |
+| **Socios / lista negra**: si el número ya es venta ganada, que no se asigne ni genere tareas | ✅/🔧 | Hoy ya no abre tarjeta nueva ni asigna (queda como reingreso en la venta). Falta: que un WhatsApp de un socio no caiga en "Sin asignar" de ventas sino a Postventa (pendiente postventa) y etiqueta "Socio" automática al ganar |
+| Una ficha = un agente (no la pueden tomar dos) | ✅ | Ya funciona así; solo supervisión reasigna |
+| **Vencimiento de la ficha**: X días para cerrar; si vence, vuelve a reparto. Desde cierta etapa (ej. preventa) queda siempre de la asesora | 🔧 | En el embudo: "La ficha vence a los N días sin cerrarse" + qué hacer (reasignar / devolver a cola / avisar) + "No vence desde la etapa…" |
+| **Reproceso**: reinyectar al día siguiente los que no contestaron | ✅/🔧 | Automatización "si no responde en X → mover a Nuevo / crear tarea / reasignar a otra" (reasignar es la acción nueva de la semana 1) |
+| Cambio de proveedor de WhatsApp | ✅ | El historial queda en la ficha; se sigue escribiendo desde la línea nueva |
+| Acceso a la demo para Martín | — | Con el demo limpio para las operadoras |
