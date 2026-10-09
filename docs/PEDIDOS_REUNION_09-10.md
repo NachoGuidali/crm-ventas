@@ -1,5 +1,7 @@
 # Pedidos de la reunión de demo con Roisa (09/10/2026)
 
+> **Actualizado 09/10:** hechos ID de grabación, resultado de gestión obligatorio + sin calificar, reproceso (acción reasignar), reingreso → prioridad/etiqueta, vencimiento de fichas, socios, gestión por pauta/base, filtros de tablero, tarea masiva, condiciones por campaña/etiqueta, campos de tipo archivo y API con etapa. Ver FUNCIONALIDADES §24. Devolución enviada como página: https://claude.ai/artifact/R9H2bF6Q3i5VceTmkD81qy. **Horario por vendedora: en standby** (se resuelve con "solo conectadas").
+
 Participantes: Melina Perez, Maximiliano Delia, Martín Gerez. Fuente: resumen y transcripción de Read AI.
 Leyenda: ✅ ya está · 🔧 cambio chico (horas) · 🧩 desarrollo (días) · ❓ depende de terceros / definir con ellos.
 

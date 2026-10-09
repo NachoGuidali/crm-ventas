@@ -689,3 +689,25 @@ Detalle punto por punto en [`CHECKLIST_ROISA.md`](CHECKLIST_ROISA.md).
 | Baja de suscripción | Link al pie de difusiones y emails automáticos (+ encabezado List-Unsubscribe) | Marca al contacto "no recibir emails": no recibe más difusiones ni emails automáticos (WhatsApp y llamadas siguen) |
 
 Permiso nuevo: **Difusiones** (incluido en Supervisor y en el rol Comercial / Marketing).
+
+## 24. Gestión de call center y cartera (pedidos de la reunión del 09/10/2026)
+
+| Función | Dónde | Cómo funciona |
+|---|---|---|
+| Resultado de la gestión obligatorio | Al cortar cada llamada atendida (cualquier pantalla) | Ventana que no se puede cerrar sin elegir el resultado; algunos piden fecha de rellamado (crea la tarea) o mueven la tarjeta. El discador no pasa la próxima llamada hasta calificar. Opciones en Embudo → Resultados de gestión; se desactiva por embudo |
+| Llamadas sin calificar | Supervisión (KPI y columna por agente), Llamadas → filtro Resultado, Oportunidades → "Con llamadas sin calificar", Reportes → Resultado de las llamadas | Para ver en masa qué gestiones quedaron sin tipificar |
+| ID de grabación | Llamadas, ficha → Llamadas, exportación CSV | Es el ID de Anura (cdrid); el buscador de Llamadas lo acepta |
+| Exportar llamadas | Llamadas → CSV | Respeta los filtros; incluye resultado, nota e ID de grabación |
+| Reproceso (reasignar) | Automatizaciones → Qué hacer: "Reasignar a otro vendedor" | Nunca a la misma vendedora; reparto parejo (menos carga) o según el embudo; opcional volver a una etapa (ej. Nuevo). Con "Si no responde en 2 días" también toma la base que ya estaba en la etapa |
+| Varias etapas o todas | Automatizaciones → Cuándo | "También en estas etapas" o "En todas las etapas abiertas" |
+| Cuando el lead reingresa | Automatizaciones → Cuándo | Se dispara cuando la persona vuelve a entrar y no se duplicó (máx. 1 vez por hora) |
+| Prioridad 🔥 | Acción de automatización, botón en la ficha, acción masiva | Primero en Mi día y en el tablero, sube en el discador, filtro "Prioridad". Se quita al calificar la llamada, escribirle o moverla de etapa |
+| Etiqueta automática | Acción de automatización "Poner una etiqueta"; Embudo → Etiqueta al cerrar como venta | Ej.: "Socio" al ganar |
+| Condiciones por campaña y etiqueta | Automatizaciones → Condiciones → "Solo para ciertas campañas o etiquetas" | Solo pautas X, solo con etiqueta Y, nunca con etiqueta Z |
+| Vencimiento de la ficha | Embudo → Vencimiento de la ficha | N días con la misma vendedora sin cerrarse → reasignar (parejo), dejar sin asignar o solo avisar. "No vence desde la etapa…" (ej. Preventa). Fuera de horario no actúa |
+| Clientes (socios) | Embudo → Clientes (socios) | Si el número ya tiene una venta (en cualquier embudo) no se abre tarjeta ni se reparte; su WhatsApp y sus llamadas perdidas van al vendedor de la venta o a un usuario de postventa. Marcar "Abrir tarjeta aunque ya sea cliente" en embudos de upgrade |
+| Tarea masiva | Oportunidades → seleccionar → "Crear tarea" | Para el vendedor de cada una (o para mí); queda en Mi día |
+| Campos de tipo archivo | Configuración → Campos (tipo Archivo); ficha → Documentos; clip 📎 en los adjuntos de WhatsApp | Varios archivos por campo (ej. recibos de sueldo); pueden ser obligatorios para pasar de etapa (se suben en la ventanita) |
+| Gestión por pauta / base | Análisis de pautas → Gestión por pauta; Importaciones → detalle de la base | Llamadas, atendidas, minutos, llamadas por lead, WhatsApp y emails de cada campaña o base |
+| Filtros del tablero | Tablero | Pauta, base importada y prioridad |
+| API con etapa y vendedor | `POST /api/v1/leads/` | `etapa` (nombre o id) y `agente` (usuario o email); si el lead ya existe lo mueve de etapa (`movida`) |
