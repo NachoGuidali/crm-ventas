@@ -80,6 +80,34 @@ class DialView(LoginRequiredMixin, View):
         return ok(llamada=services.estado_llamada_json(llamada), callId=llamada.call_id or llamada.anura_uuid)
 
 
+class CalificarView(LoginRequiredMixin, View):
+    """POST /api/telephony/calificar/<id> — resultado de la gestión al terminar la llamada."""
+
+    def post(self, request, pk):
+        from datetime import datetime
+        from apps.crm.models import ResultadoGestion
+        qs = Llamada.objects.select_related('oportunidad__embudo', 'oportunidad__contacto', 'contacto', 'agente')
+        if not request.user.ve_todo:
+            qs = qs.filter(agente=request.user)
+        llamada = get_object_or_404(qs, pk=pk)
+        data = json_body(request)
+        resultado = ResultadoGestion.objects.filter(pk=data.get('resultado') or 0, activo=True).first()
+        if resultado is None:
+            return error('Elegí el resultado de la llamada.')
+        fecha = None
+        if data.get('volver_a_llamar'):
+            try:
+                fecha = timezone.make_aware(datetime.fromisoformat(data['volver_a_llamar']))
+            except (ValueError, TypeError):
+                return error('Fecha inválida.')
+        try:
+            services.calificar_llamada(llamada, resultado, request.user, nota=data.get('nota', ''),
+                                       volver_a_llamar=fecha)
+        except services.ErrorTelefonia as e:
+            return error(str(e))
+        return ok(siguiente=services.pendiente_json(services.pendiente_de_calificar(request.user)))
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class HangupView(LoginRequiredMixin, View):
     """PUT /api/telephony/hangup/{id} — acepta el id interno de la llamada o el callId de Anura."""
@@ -220,9 +248,27 @@ class ConfigView(PermisoRequeridoMixin, View):
         return redirect('telefonia:config')
 
 
+def _llamadas_csv(qs):
+    import csv
+    resp = HttpResponse(content_type='text/csv; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="llamadas_{timezone.localdate():%Y%m%d}.csv"'
+    resp.write('\ufeff')
+    w = csv.writer(resp, delimiter=';')
+    w.writerow(['Fecha', 'Dirección', 'Número', 'Contacto', 'Oportunidad', 'Agente', 'Estado', 'Resultado', 'Nota',
+                'Duración (s)', 'ID grabación'])
+    for l in qs.iterator(chunk_size=2000):
+        w.writerow([timezone.localtime(l.inicio_at).strftime('%d/%m/%Y %H:%M'), l.get_direccion_display(), l.numero,
+                    l.contacto.nombre if l.contacto_id else '', l.oportunidad_id or '',
+                    l.agente.display_name if l.agente_id else '', l.get_estado_display(),
+                    l.resultado.nombre if l.resultado_id else ('Sin calificar' if l.estado == Llamada.ESTADO_ATENDIDA
+                                                               and not l.calificada_at and l.oportunidad_id else ''),
+                    l.resultado_nota, l.duracion_seg, l.id_grabacion])
+    return resp
+
+
 class LlamadasView(LoginRequiredMixin, View):
     def get(self, request):
-        qs = Llamada.objects.select_related('agente', 'contacto', 'oportunidad')
+        qs = Llamada.objects.select_related('agente', 'contacto', 'oportunidad', 'resultado')
         if not request.user.ve_todo:
             qs = qs.filter(agente=request.user)
         g = request.GET
@@ -232,17 +278,26 @@ class LlamadasView(LoginRequiredMixin, View):
             qs = qs.filter(direccion=g['direccion'])
         if g.get('estado'):
             qs = qs.filter(estado=g['estado'])
+        if g.get('resultado') == 'sin':
+            qs = qs.filter(services.q_sin_calificar())
+        elif g.get('resultado'):
+            qs = qs.filter(resultado_id=g['resultado'])
         if g.get('desde'):
             qs = qs.filter(inicio_at__date__gte=g['desde'])
         if g.get('hasta'):
             qs = qs.filter(inicio_at__date__lte=g['hasta'])
         if g.get('q'):
             digitos = ''.join(c for c in g['q'] if c.isdigit())
-            qs = qs.filter(Q(contacto__nombre__icontains=g['q']) | Q(numero__endswith=digitos[-8:] or '§'))
+            qs = qs.filter(Q(contacto__nombre__icontains=g['q']) | Q(numero__endswith=digitos[-8:] or '§')
+                           | Q(call_id=g['q'].strip()) | Q(anura_uuid=g['q'].strip()))
+        from apps.crm.models import ResultadoGestion
         from apps.users.models import User
+        if g.get('csv'):
+            return _llamadas_csv(qs.order_by('-inicio_at'))
         return render(request, 'telefonia/llamadas.html', {
             'page': paginar(request, qs.order_by('-inicio_at'), 50), 'filtros': g, 'query': query_sin_page(request),
             'agentes': User.objects.filter(is_active=True), 'estados': Llamada.ESTADO_CHOICES,
+            'resultados': ResultadoGestion.objects.all(),
         })
 
 

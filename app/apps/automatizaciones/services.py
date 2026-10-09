@@ -99,8 +99,9 @@ def programar_acciones_de_etapa(oportunidad_id, historial_id):
     if historial is None or historial.etapa_nueva_id is None:
         return 0
     op = historial.oportunidad
-    acciones = AccionEtapa.objects.filter(etapa_id=historial.etapa_nueva_id, activa=True, disparador__in=[
-        AccionEtapa.DISP_ENTRADA, AccionEtapa.DISP_SIN_RESPUESTA]).order_by('orden', 'pk')
+    acciones = AccionEtapa.objects.filter(AccionEtapa.q_etapa(historial.etapa_nueva_id, op.embudo_id), activa=True,
+                                          disparador__in=[AccionEtapa.DISP_ENTRADA, AccionEtapa.DISP_SIN_RESPUESTA]
+                                          ).distinct().order_by('orden', 'pk')
     ahora = timezone.now()
     programadas = 0
     for accion in acciones:
@@ -144,11 +145,31 @@ def cliente_respondio(op):
         return 0
     from apps.crm.puntaje import recalcular
     recalcular(op)
-    acciones = list(AccionEtapa.objects.filter(etapa_id=op.etapa_id, activa=True, disparador=AccionEtapa.DISP_RESPUESTA))
+    acciones = list(AccionEtapa.objects.filter(AccionEtapa.q_etapa(op.etapa_id, op.embudo_id), activa=True,
+                                               disparador=AccionEtapa.DISP_RESPUESTA).distinct())
     if not acciones:
         return 0
     historial = _historial_actual(op)
     return sum(1 for a in acciones if _programar_ya(a, op, historial))
+
+
+def lead_reingreso(op):
+    """El lead volvió a entrar (formulario, WhatsApp, importación): dispara las automatizaciones "Cuando reingresa".
+    Cada automatización corre como máximo una vez por hora por oportunidad (evita ráfagas de formularios)."""
+    from django.core.cache import cache
+    acciones = list(AccionEtapa.objects.filter(AccionEtapa.q_etapa(op.etapa_id, op.embudo_id), activa=True,
+                                               disparador=AccionEtapa.DISP_REINGRESO).distinct().select_related('embudo'))
+    ahora, n = timezone.now(), 0
+    for accion in acciones:
+        if not cache.add(f'reingreso_{accion.pk}_{op.pk}', 1, 3600):
+            continue
+        cuando = ahora + timedelta(minutes=accion.demora_minutos)
+        if accion.solo_en_horario:
+            cuando = proxima_apertura(op.embudo, cuando)
+        ejec = EjecucionAccion.objects.create(accion=accion, oportunidad=op, historial=None, programada_para=cuando)
+        _encolar(ejec, cuando, ahora)
+        n += 1
+    return n
 
 
 def revisar_sin_actividad():
@@ -157,8 +178,21 @@ def revisar_sin_actividad():
     ahora, n = timezone.now(), 0
     for accion in AccionEtapa.objects.filter(activa=True, disparador=AccionEtapa.DISP_SIN_ACTIVIDAD).select_related('embudo'):
         limite = ahora - timedelta(minutes=max(accion.demora_minutos, 1))
-        ops = (Oportunidad.objects.filter(etapa_id=accion.etapa_id, estado=Oportunidad.ESTADO_ABIERTA,
+        ops = (Oportunidad.objects.filter(etapa_id__in=accion.ids_etapas(), estado=Oportunidad.ESTADO_ABIERTA,
                                           ultima_actividad_at__lt=limite, etapa_desde__lt=limite)
+               .exclude(Exists(EjecucionAccion.objects.filter(accion=accion, oportunidad=OuterRef('pk'),
+                                                             created_at__gte=OuterRef('etapa_desde'))))
+               .select_related('embudo')[:300])
+        for op in ops:
+            if _programar_ya(accion, op, _historial_actual(op)):
+                n += 1
+    # "Si no responde": también los que ya estaban en la etapa antes de crear la automatización (reproceso de la
+    # base actual). Los que entran después se programan al entrar; la unicidad por entrada evita duplicados.
+    for accion in AccionEtapa.objects.filter(activa=True, disparador=AccionEtapa.DISP_SIN_RESPUESTA,
+                                             demora_minutos__gt=0).select_related('embudo'):
+        limite = ahora - timedelta(minutes=accion.demora_minutos)
+        ops = (Oportunidad.objects.filter(etapa_id__in=accion.ids_etapas(), estado=Oportunidad.ESTADO_ABIERTA,
+                                          etapa_desde__lt=limite)
                .exclude(Exists(EjecucionAccion.objects.filter(accion=accion, oportunidad=OuterRef('pk'),
                                                              created_at__gte=OuterRef('etapa_desde'))))
                .select_related('embudo')[:300])
@@ -210,7 +244,8 @@ def ejecutar(ejecucion_id):
             desde = ejec.historial.created_at
         elif accion.disparador == AccionEtapa.DISP_SIN_ACTIVIDAD:
             desde = ejec.created_at
-        estado, detalle = _correr(accion, op, desde)
+        estado, detalle = _correr(accion, op, desde,
+                                  etapa_ref=ejec.historial.etapa_nueva_id if ejec.historial_id else None)
     except Exception as e:
         logger.exception('Error ejecutando automatización %s sobre oportunidad #%s', accion, op.pk)
         estado, detalle = EjecucionAccion.ESTADO_ERROR, str(e)[:500]
@@ -238,7 +273,7 @@ def _programar_siguientes(accion, ejec):
         _encolar(nueva, cuando, ahora)
 
 
-def _correr(accion, op, ejec_desde=None):
+def _correr(accion, op, ejec_desde=None, etapa_ref=None):
     from apps.crm import services as crm
     from apps.crm.models import Actividad, Oportunidad, Tarea
     from apps.users.services import notificar, notificar_varios, supervisores_de
@@ -248,8 +283,11 @@ def _correr(accion, op, ejec_desde=None):
     op.refresh_from_db()
     if not accion.activa:
         return E.ESTADO_OMITIDA, 'La automatización se desactivó.'
-    if accion.solo_si_sigue_en_etapa and op.etapa_id != accion.etapa_id:
+    if accion.solo_si_sigue_en_etapa and (op.etapa_id != etapa_ref if etapa_ref else not accion.aplica_a(op.etapa_id)):
         return E.ESTADO_OMITIDA, 'El prospecto ya no está en esa etapa.'
+    cumple, motivo = accion.condiciones_ok(op)
+    if not cumple:
+        return E.ESTADO_OMITIDA, motivo
     if accion.disparador == AccionEtapa.DISP_SIN_RESPUESTA and ejec_desde is not None and _respondio_desde(op, ejec_desde):
         return E.ESTADO_OMITIDA, 'El cliente respondió.'
     if accion.disparador == AccionEtapa.DISP_SIN_ACTIVIDAD and ejec_desde is not None \
@@ -338,6 +376,40 @@ def _correr(accion, op, ejec_desde=None):
         if hist is None:
             return E.ESTADO_OMITIDA, 'No se movió (ya estaba ahí o faltan datos obligatorios).'
         return E.ESTADO_EJECUTADA, f'Pasó a {destino}'
+
+    if accion.tipo == AccionEtapa.TIPO_REASIGNAR:
+        if not op.activa:
+            return E.ESTADO_OMITIDA, 'La oportunidad ya está cerrada.'
+        anterior = op.agente
+        from apps.crm.models import Embudo
+        modo = Embudo.ASIG_MENOR_CARGA if accion.reparto == AccionEtapa.REPARTO_MENOR_CARGA else None
+        agente = crm.elegir_y_reasignar(op, excluir=[anterior] if anterior else [], modo=modo,
+                                        nota=f'reproceso: {accion.nombre}')
+        if agente is None:
+            return E.ESTADO_OMITIDA, 'No hay otro vendedor disponible para reasignar.'
+        destino = accion.volver_a_etapa
+        if destino is not None and destino.embudo_id == op.embudo_id and not destino.es_cierre:
+            op.refresh_from_db()
+            try:
+                crm.mover_etapa(op, destino, None, nota=f'Reproceso: {accion.nombre}', automatico=True)
+            except crm.ErrorNegocio:
+                pass
+        return E.ESTADO_EJECUTADA, (f'Reasignada de {anterior.display_name if anterior else "sin asignar"} '
+                                    f'a {agente.display_name}' + (f' y vuelta a {destino}' if destino else ''))
+
+    if accion.tipo == AccionEtapa.TIPO_PRIORIDAD:
+        if not op.activa:
+            return E.ESTADO_OMITIDA, 'La oportunidad ya está cerrada.'
+        crm.marcar_prioridad(op, titulo)
+        if op.agente_id:
+            notificar(op.agente, 'sistema', f'🔥 Prioridad: {contacto.nombre}', titulo, op.get_absolute_url())
+        return E.ESTADO_EJECUTADA, f'Marcada como prioridad ({titulo})'
+
+    if accion.tipo == AccionEtapa.TIPO_ETIQUETA:
+        if accion.etiqueta_id is None:
+            return E.ESTADO_OMITIDA, 'Falta la etiqueta.'
+        contacto.etiquetas.add(accion.etiqueta_id)
+        return E.ESTADO_EJECUTADA, f'Etiqueta «{accion.etiqueta}»'
 
     return E.ESTADO_OMITIDA, 'Tipo de acción desconocido.'
 

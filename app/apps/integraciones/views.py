@@ -104,7 +104,7 @@ class LeadCrearView(ApiBase):
             origen_pauta = str(d['origen'])
         from apps.crm.importacion import _valor_personalizado
         from apps.crm.models import CampoPersonalizado
-        personalizados = {c.slug: c for c in CampoPersonalizado.activos()}
+        personalizados = {c.slug: c for c in CampoPersonalizado.activos() if not c.es_archivo}
         extra = {}
         for k, v in d.items():
             if k in CAMPOS_LEAD | {'embudo', 'fuente', 'origen', 'valor', 'nota', *claves_pauta} or v in (None, ''):

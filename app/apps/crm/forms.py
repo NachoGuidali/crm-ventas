@@ -3,7 +3,7 @@ from django.db.models import Q
 
 from core.phone import normalizar_telefono
 
-from .models import (CampoPersonalizado, Contacto, Embudo, Etapa, Etiqueta, Oportunidad, ReglaAsignacion, Tarea,
+from .models import (CampoPersonalizado, Contacto, Embudo, Etapa, Etiqueta, Oportunidad, ReglaAsignacion, ResultadoGestion, Tarea,
                      Tipificacion)
 
 
@@ -79,7 +79,8 @@ class CamposPersonalizadosMixin:
     """Agrega los campos personalizados activos al formulario y los guarda en datos_extra."""
 
     def agregar_campos_personalizados(self, datos_extra=None, embudo=None):
-        self.campos_personalizados = CampoPersonalizado.activos(embudo)
+        # Los de tipo archivo se cargan aparte (subida o desde WhatsApp), no en el formulario
+        self.campos_personalizados = [c for c in CampoPersonalizado.activos(embudo) if not c.es_archivo]
         datos_extra = datos_extra or {}
         for c in self.campos_personalizados:
             f = campo_formulario(c)
@@ -222,7 +223,8 @@ class EmbudoForm(BootstrapMixin, forms.ModelForm):
                   'asignar_entre', 'sin_conectados', 'sla_minutos', 'sla_accion', 'sla_max_reasignaciones',
                   'respetar_horario', 'horario_desde', 'horario_hasta', 'fuera_de_horario', 'crear_tarea_al_asignar',
                   'linea_whatsapp', 'max_intentos_sin_respuesta', 'dias_inactividad_recordatorio',
-                  'dias_estancado_alerta', 'notificar_venta_supervisores', 'reingreso_perdidos']
+                  'dias_estancado_alerta', 'notificar_venta_supervisores', 'reingreso_perdidos', 'exigir_resultado',
+                  'vence_dias', 'vence_accion', 'vence_hasta_etapa', 'socios_a', 'socios_usuario', 'etiqueta_venta', 'clientes_de_otros']
         widgets = {
             'descripcion': forms.Textarea(attrs={'rows': 2}),
             'horario_desde': forms.TimeInput(attrs={'type': 'time'}, format='%H:%M'),
@@ -241,6 +243,14 @@ class EmbudoForm(BootstrapMixin, forms.ModelForm):
         self.fields['agentes'].queryset = activos
         self.fields['supervisores'].queryset = activos.exclude(rol=User.ROL_AGENTE)
         self.fields['dias_habiles'].initial = self.instance.dias_habiles or [0, 1, 2, 3, 4]
+        from .models import Etapa
+        self.fields['vence_hasta_etapa'].queryset = (
+            Etapa.objects.filter(embudo=self.instance, tipo=Etapa.TIPO_NORMAL).order_by('orden')
+            if self.instance.pk else Etapa.objects.none())
+        self.fields['vence_hasta_etapa'].empty_label = 'Vence en cualquier etapa'
+        self.fields['socios_usuario'].queryset = activos
+        self.fields['socios_usuario'].empty_label = '—'
+        self.fields['etiqueta_venta'].empty_label = 'Ninguna'
         self._estilizar()
         for nombre in ('agentes', 'supervisores', 'dias_habiles'):
             self.fields[nombre].widget.attrs['class'] = 'form-check-input'
@@ -267,6 +277,20 @@ class TipificacionForm(BootstrapMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._estilizar()
+
+
+class ResultadoGestionForm(BootstrapMixin, forms.ModelForm):
+    class Meta:
+        model = ResultadoGestion
+        fields = ['nombre', 'contactado', 'pide_fecha', 'mover_a', 'orden', 'activo']
+
+    def __init__(self, *args, embudo=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .models import Etapa
+        self.fields['mover_a'].queryset = (Etapa.objects.filter(embudo=embudo, tipo=Etapa.TIPO_NORMAL).order_by('orden')
+                                           if embudo else Etapa.objects.none())
+        self.fields['mover_a'].empty_label = 'No mover'
         self._estilizar()
 
 

@@ -219,6 +219,10 @@ def ingresar_prospecto(datos: dict, embudo: Embudo, origen: str, fuente='', usua
         return ResultadoIngreso(contacto, activa, contacto_nuevo, False, 'ya_activa')
 
     ultima = contacto.oportunidades.filter(embudo=embudo).order_by('-created_at').first()
+    if not (ultima and ultima.estado == Oportunidad.ESTADO_GANADA) and not embudo.clientes_de_otros:
+        venta = contacto.oportunidades.filter(estado=Oportunidad.ESTADO_GANADA).order_by('-cerrada_at').first()
+        if venta is not None:
+            ultima = venta  # ya es cliente en otro embudo: no se abre ni se reparte
     if ultima and ultima.estado == Oportunidad.ESTADO_GANADA:
         _registrar_reingreso(ultima, contacto, f'Reingresó por {texto_origen}, pero ya es cliente (venta cerrada).', usuario,
                              datos_reingreso)
@@ -278,6 +282,34 @@ def _registrar_reingreso(op, contacto, texto, usuario, datos=None):
     transaction.on_commit(lambda: recalcular(op))
     if op.activa:
         tocar(op)
+    from apps.automatizaciones.services import lead_reingreso
+    transaction.on_commit(lambda: lead_reingreso(op))
+
+
+def marcar_prioridad(op, motivo='', usuario=None, prioritaria=True):
+    """Marca (o quita) la prioridad de la oportunidad: aparece primero en Mi día, el tablero y el discador."""
+    motivo = (motivo or 'Prioridad')[:150] if prioritaria else ''
+    if not Oportunidad.objects.filter(pk=op.pk).exclude(prioritaria=prioritaria, prioridad_motivo=motivo) \
+            .update(prioritaria=prioritaria, prioridad_motivo=motivo):
+        return False
+    op.prioritaria, op.prioridad_motivo = prioritaria, motivo
+    Actividad.objects.create(contacto_id=op.contacto_id, oportunidad=op, tipo=Actividad.TIPO_SISTEMA, usuario=usuario,
+                             texto=f'🔥 Marcada como prioridad: {motivo}' if prioritaria else 'Se quitó la prioridad.')
+    if prioritaria:
+        from apps.telefonia.models import CampaniaContacto
+        CampaniaContacto.objects.filter(oportunidad=op, estado__in=[CampaniaContacto.ESTADO_PENDIENTE,
+                                                                     CampaniaContacto.ESTADO_REINTENTAR],
+                                         prioridad__lt=100).update(prioridad=F('prioridad') + 100)
+    return True
+
+
+def responsable_cliente(contacto):
+    """Si la persona ya es cliente (venta cerrada): quién la atiende según el embudo de esa venta (o None)."""
+    if contacto is None:
+        return None
+    venta = (contacto.oportunidades.filter(estado=Oportunidad.ESTADO_GANADA).select_related('embudo', 'agente')
+             .order_by('-cerrada_at').first())
+    return venta.embudo.responsable_de_cliente(venta) if venta else None
 
 
 def oportunidad_activa_de(contacto, embudo=None):
@@ -324,11 +356,14 @@ def _elegir(candidatos, modo, ultimo_id):
     return candidatos[0]
 
 
-def elegir_agente(embudo: Embudo, excluir=()):
+def elegir_agente(embudo: Embudo, excluir=(), modo=None):
     """Elige el próximo agente según la regla general del embudo. Debe llamarse dentro de una transacción."""
     candidatos = _candidatos(embudo.agentes.all(), embudo.asignar_entre, excluir,
                              vacio_si_nadie_conectado=embudo.sin_conectados == Embudo.SIN_CONECTADOS_ENCOLAR)
-    return _elegir(candidatos, embudo.modo_asignacion, embudo.ultimo_asignado_id)
+    modo = modo or embudo.modo_asignacion
+    if modo == Embudo.ASIG_MANUAL:
+        modo = Embudo.ASIG_ROUND_ROBIN
+    return _elegir(candidatos, modo, embudo.ultimo_asignado_id)
 
 
 def regla_para(op: Oportunidad):
@@ -433,16 +468,16 @@ def _post_asignacion(op, agente, usuario=None, notificar_agente=True, texto=None
                   f'{op.embudo} · {op.contacto.telefono}', op.get_absolute_url())
 
 
-def elegir_y_reasignar(op: Oportunidad, excluir=(), usuario=None):
-    """Redistribución: elige el próximo agente (según la regla del embudo) excluyendo algunos, y reasigna."""
+def elegir_y_reasignar(op: Oportunidad, excluir=(), usuario=None, modo=None, nota='redistribución'):
+    """Redistribución: elige el próximo agente (según la regla del embudo o `modo`) excluyendo algunos, y reasigna."""
     with transaction.atomic():
         embudo_lock = Embudo.objects.select_for_update().get(pk=op.embudo_id)
-        agente = elegir_agente(embudo_lock, excluir=excluir)
+        agente = elegir_agente(embudo_lock, excluir=excluir, modo=modo)
         if agente is None:
             return None
         embudo_lock.ultimo_asignado = agente
         embudo_lock.save(update_fields=['ultimo_asignado'])
-    reasignar(op, agente, usuario, nota='redistribución')
+    reasignar(op, agente, usuario, nota=nota)
     return agente
 
 
@@ -450,7 +485,8 @@ def reasignar(op: Oportunidad, agente, usuario, nota=''):
     anterior = op.agente
     if anterior == agente:
         return
-    Oportunidad.objects.filter(pk=op.pk).update(agente=agente, asignada_at=timezone.now(), pendiente_asignacion=False)
+    Oportunidad.objects.filter(pk=op.pk).update(agente=agente, asignada_at=timezone.now(), pendiente_asignacion=False,
+                                                vencida_at=None)
     op.agente = agente
     # Las tareas pendientes del agente anterior pasan al nuevo.
     op.tareas.filter(estado=Tarea.ESTADO_PENDIENTE).update(asignado_a=agente)
@@ -536,7 +572,13 @@ def mover_etapa(op: Oportunidad, etapa: Etapa, usuario=None, tipificacion: Tipif
         if etapa.es_ganado and not op.contacto_efectivo_at:
             op.contacto_efectivo_at = ahora
             campos.append('contacto_efectivo_at')
+        # La vendedora ya la trabajó (o se cerró): deja de ser prioridad
+        if op.prioritaria and (etapa.es_cierre or (usuario is not None and not automatico)):
+            op.prioritaria, op.prioridad_motivo = False, ''
+            campos += ['prioritaria', 'prioridad_motivo']
         op.save(update_fields=list(dict.fromkeys(campos)))
+        if etapa.es_ganado and op.embudo.etiqueta_venta_id:
+            op.contacto.etiquetas.add(op.embudo.etiqueta_venta_id)
 
         historial = HistorialEtapa.objects.create(
             oportunidad=op, etapa_anterior=anterior, etapa_nueva=etapa, estado_anterior=estado_anterior,
@@ -828,6 +870,58 @@ def revisar_sla():
     return {'vencidos': sum(len(v) for v in por_embudo.values()), 'reasignadas': reasignadas}
 
 
+def q_vencibles(embudo, ahora=None):
+    """Fichas del embudo que ya pasaron su plazo de vencimiento y todavía no se procesaron."""
+    ahora = ahora or timezone.now()
+    q = Q(embudo=embudo, estado=Oportunidad.ESTADO_ABIERTA, agente__isnull=False, vencida_at__isnull=True,
+          etapa__tipo=Etapa.TIPO_NORMAL, asignada_at__lt=ahora - timedelta(days=embudo.vence_dias))
+    if embudo.vence_hasta_etapa_id:
+        q &= Q(etapa__orden__lt=embudo.vence_hasta_etapa.orden)
+    return q
+
+
+def revisar_vencimientos():
+    """Cada 15 min: fichas que pasaron N días con el mismo vendedor sin cerrarse vuelven al reparto
+    (o quedan sin asignar, o solo se avisa). Desde la etapa protegida en adelante no vencen."""
+    from apps.users.services import notificar, notificar_varios, supervisores_de
+    ahora, total = timezone.now(), 0
+    for embudo in Embudo.objects.filter(activo=True, vence_dias__gt=0).select_related('vence_hasta_etapa'):
+        if not embudo.en_horario():
+            continue  # fuera de horario no se mueve nada: se revisa al abrir
+        ops = list(Oportunidad.objects.filter(q_vencibles(embudo, ahora))
+                   .select_related('agente', 'contacto', 'embudo')[:300])
+        for op in ops:
+            anterior = op.agente
+            texto = f'Ficha vencida: {embudo.vence_dias} días con {anterior.display_name} sin cerrarse.'
+            if embudo.vence_accion == Embudo.VENCE_REASIGNAR:
+                nuevo = elegir_y_reasignar(op, excluir=[anterior], modo=Embudo.ASIG_MENOR_CARGA,
+                                           nota=f'ficha vencida ({embudo.vence_dias} días)')
+                if nuevo:
+                    texto += f' Se reasignó a {nuevo.display_name}.'
+                else:
+                    texto += ' No había otro vendedor disponible: sigue con el mismo.'
+                    Oportunidad.objects.filter(pk=op.pk).update(vencida_at=ahora)
+            elif embudo.vence_accion == Embudo.VENCE_LIBERAR:
+                Oportunidad.objects.filter(pk=op.pk).update(agente=None, vencida_at=ahora, asignada_at=None)
+                op.tareas.filter(estado=Tarea.ESTADO_PENDIENTE).update(asignado_a=None)
+                invalidar_tareas(anterior)
+                from apps.whatsapp.models import Conversacion
+                Conversacion.objects.filter(contacto_id=op.contacto_id, agente=anterior).update(agente=None)
+                texto += ' Quedó sin asignar para que supervisión la reparta.'
+            else:
+                Oportunidad.objects.filter(pk=op.pk).update(vencida_at=ahora)
+            notificar(anterior, 'sistema', f'Ficha vencida: {op.contacto.nombre}', texto, op.get_absolute_url())
+            Actividad.objects.create(contacto_id=op.contacto_id, oportunidad=op, tipo=Actividad.TIPO_ASIGNACION,
+                                     texto=texto, datos={'vencimiento': True})
+        if ops:
+            total += len(ops)
+            notificar_varios(supervisores_de(embudo), 'sistema',
+                             f'{len(ops)} ficha{"s" if len(ops) > 1 else ""} vencida{"s" if len(ops) > 1 else ""} en {embudo}',
+                             f'{embudo.vence_dias} días sin cerrarse: {embudo.get_vence_accion_display().lower()}.',
+                             f'/oportunidades/?embudo={embudo.pk}')
+    return total
+
+
 def marcar_primer_contacto(op, momento=None):
     """Primera gestión del vendedor sobre el lead (para el SLA). Solo la primera vez."""
     if op is None:
@@ -965,15 +1059,19 @@ def cola_de_trabajo(user, limite=30):
     base = (Oportunidad.objects.filter(agente=user, estado=Oportunidad.ESTADO_ABIERTA)
             .exclude(pk__in=con_tarea).select_related('contacto', 'etapa', 'embudo'))
     # Dentro de cada grupo, primero los de mayor puntaje (lead scoring)
+    prioritarias = list(base.filter(prioritaria=True).order_by('-ultima_actividad_at')[:limite])
+    base = base.exclude(prioritaria=True)
     nuevos = list(base.filter(intentos_contacto=0).order_by('-puntaje', 'asignada_at', 'created_at')[:limite])
     frios = list(base.filter(intentos_contacto__gt=0, ultima_actividad_at__lt=ahora - timedelta(days=1))
                  .order_by('-puntaje', 'ultima_actividad_at')[:limite])
-    return {'tareas': tareas, 'nuevos': nuevos, 'frios': frios}
+    return {'tareas': tareas, 'prioritarias': prioritarias, 'nuevos': nuevos, 'frios': frios}
 
 
 def siguiente_prospecto(user):
     """El próximo prospecto a trabajar (para el botón 'Siguiente')."""
     cola = cola_de_trabajo(user, limite=1)
+    if cola['prioritarias']:
+        return cola['prioritarias'][0]
     if cola['tareas'] and cola['tareas'][0].oportunidad:
         return cola['tareas'][0].oportunidad
     if cola['nuevos']:
@@ -1061,6 +1159,15 @@ def filtrar_oportunidades(qs, params, user):
             pass
     if params.get('mias') and user:
         qs = qs.filter(agente=user)
+    if params.get('prioritaria'):
+        qs = qs.filter(prioritaria=True)
+    if params.get('vencida'):
+        qs = qs.filter(vencida_at__isnull=False)
+    if params.get('sin_calificar'):
+        from django.db.models import Exists, OuterRef
+        from apps.telefonia.models import Llamada
+        from apps.telefonia.services import q_sin_calificar
+        qs = qs.filter(Exists(Llamada.objects.filter(q_sin_calificar(), oportunidad=OuterRef('pk'))))
     filtros_cp = {k[3:]: v for k, v in params.items() if k.startswith('cp_') and v not in (None, '')}
     if filtros_cp:
         from .models import CampoPersonalizado

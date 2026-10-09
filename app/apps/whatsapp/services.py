@@ -123,6 +123,10 @@ def procesar_mensaje_entrante(linea, msg):
         oportunidad = crm.oportunidad_activa_de(contacto)
 
     agente_id = conv.agente_id or (oportunidad.agente_id if oportunidad and oportunidad.activa else None)
+    if agente_id is None and contacto is not None and (oportunidad is None or not oportunidad.activa):
+        # Ya es cliente (socio): va a postventa o a su vendedor, no a la bandeja de ventas sin asignar
+        responsable = crm.responsable_cliente(contacto)
+        agente_id = responsable.pk if responsable else None
 
     local_url, mime = '', msg.media_mime
     if msg.tipo in Mensaje.TIPOS_MEDIA and (msg.media_id or msg.media_url or msg.wa_id):
@@ -244,6 +248,9 @@ def enviar_mensaje(conv, usuario=None, texto='', plantilla=None, valores=None, a
             crm.tocar(op)
             crm.marcar_primer_contacto(op)
             crm.avanzar_desde_inicial(op, usuario)
+            if op.prioritaria and op.agente_id == usuario.pk:
+                from apps.crm.models import Oportunidad
+                Oportunidad.objects.filter(pk=op.pk).update(prioritaria=False, prioridad_motivo='')  # ya la atendió
     marcar_cambio_inbox()
     return mensaje
 

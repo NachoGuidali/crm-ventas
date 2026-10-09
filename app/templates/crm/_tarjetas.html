@@ -12,6 +12,7 @@
     <span title="Días en esta etapa"><i class="bi bi-clock"></i> {{ o.dias_en_etapa }}d</span>
     {% if o.intentos_contacto %}<span title="Intentos de contacto"><i class="bi bi-telephone-outbound"></i> {{ o.intentos_contacto }}</span>{% endif %}
     {% if o.estado == 'pausada' %}<span class="chip warn" title="{{ o.motivo_pausa }}"><i class="bi bi-pause-fill"></i>{% if o.proximo_contacto_at %} {{ o.proximo_contacto_at|date:"d/m" }}{% endif %}</span>{% endif %}
+    {% if o.prioritaria %}<span class="chip danger" title="{{ o.prioridad_motivo|default:'Prioridad' }}">🔥</span>{% endif %}
     {% if o.tiene_vencidas %}<span class="chip danger" title="Tiene tareas vencidas"><i class="bi bi-alarm"></i></span>{% endif %}
     {% if o.contacto.no_contactar %}<span class="chip danger" title="No contactar"><i class="bi bi-slash-circle"></i></span>{% endif %}
     {% if o.intentos_contacto == 0 and o.estado == 'abierta' %}<span class="chip info">Nuevo</span>{% endif %}

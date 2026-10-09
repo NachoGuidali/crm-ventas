@@ -19,6 +19,21 @@
   <tbody>{% for e in lote.errores_detalle %}<tr><td>{{ e.fila }}</td><td class="text-danger small">{{ e.error }}</td><td class="small muted">{% for k, v in e.datos.items %}{{ k }}: {{ v }}{% if not forloop.last %} · {% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
 </table></div></div>
 {% endif %}
+{% if resumen.leads %}
+<div class="card mt-3"><div class="card-header d-flex align-items-center">Resultados de esta base <span class="muted small ms-2 me-auto">· desde que se importó</span>
+  <a class="small" href="{% url 'crm:oportunidades' %}?embudo=todos&lote={{ lote.pk }}">Ver las oportunidades</a></div>
+  <div class="card-body"><div class="row g-3 text-center" style="font-variant-numeric:tabular-nums">
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ resumen.leads }}</div><div class="small muted">Oportunidades</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ resumen.efectivos }}</div><div class="small muted">Contactados</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ resumen.ventas }}</div><div class="small muted">Ventas</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ resumen.perdidas }}</div><div class="small muted">No venta</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ resumen.en_curso }}</div><div class="small muted">En curso</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ gestion.llamadas|default:0 }}</div><div class="small muted">Llamadas ({{ gestion.atendidas|default:0 }} atendidas)</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ gestion.minutos|default:0 }}</div><div class="small muted">Minutos</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ gestion.whatsapp|default:0 }}</div><div class="small muted">WhatsApp enviados</div></div>
+    <div class="col-6 col-md"><div class="fs-5 fw-semibold">{{ gestion.emails|default:0 }}</div><div class="small muted">Emails</div></div>
+  </div></div></div>
+{% endif %}
 {% if lote.estado == 'pendiente' or lote.estado == 'procesando' %}
 <script>
 (function poll() {

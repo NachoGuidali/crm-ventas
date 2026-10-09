@@ -52,7 +52,26 @@
       <div class="col-6"><label class="form-label">{{ form.dias_estancado_alerta.label }}</label>{{ form.dias_estancado_alerta }}</div>
       <div class="col-12"><label class="form-label">{{ form.reingreso_perdidos.label }}</label>{{ form.reingreso_perdidos }}</div>
       <div class="col-12"><label class="d-flex gap-2 small">{{ form.notificar_venta_supervisores }} {{ form.notificar_venta_supervisores.label }}</label></div>
+      <div class="col-12"><label class="d-flex gap-2 small">{{ form.exigir_resultado }} {{ form.exigir_resultado.label }}</label>
+        <div class="form-text">{{ form.exigir_resultado.help_text }} Las opciones se configuran abajo, en <a href="#resultados">Resultados de gestión</a>.</div></div>
     </div>
+  </div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header">Vencimiento de la ficha (cartera)</div><div class="card-body">
+    <div class="row g-2">
+      <div class="col-sm-4"><label class="form-label">{{ form.vence_dias.label }}</label>{{ form.vence_dias }}</div>
+      <div class="col-sm-8"><label class="form-label">{{ form.vence_accion.label }}</label>{{ form.vence_accion }}</div>
+      <div class="col-12"><label class="form-label">{{ form.vence_hasta_etapa.label }}</label>{{ form.vence_hasta_etapa }}</div>
+    </div>
+    <div class="form-text">{{ form.vence_dias.help_text }} {{ form.vence_hasta_etapa.help_text }} Fuera del horario de atención no se reasigna. Al reasignarse, el nuevo vendedor arranca con el plazo completo.</div>
+  </div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header">Clientes (socios)</div><div class="card-body">
+    <div class="row g-2">
+      <div class="col-12"><label class="form-label">{{ form.socios_a.label }}</label>{{ form.socios_a }}</div>
+      <div class="col-sm-6"><label class="form-label">{{ form.socios_usuario.label }}</label>{{ form.socios_usuario }}</div>
+      <div class="col-sm-6"><label class="form-label">{{ form.etiqueta_venta.label }}</label>{{ form.etiqueta_venta }}</div>
+      <div class="col-12"><label class="d-flex gap-2 small">{{ form.clientes_de_otros }} {{ form.clientes_de_otros.label }}</label></div>
+    </div>
+    <div class="form-text">Un cliente que vuelve a escribir, llamar o llenar un formulario <b>no abre una tarjeta nueva ni se reparte entre vendedores</b>: queda registrado en su venta y su chat / llamada perdida va a quien elijas acá. {{ form.etiqueta_venta.help_text }}</div>
   </div></div></div>
 </div>
 <div class="mt-3"><button class="btn btn-primary">Guardar embudo</button> <a href="{% url 'crm:embudos' %}" class="btn btn-outline-secondary">Volver</a></div>
@@ -109,6 +128,27 @@
     </form>
   </div></div></div>
 
+  <div class="col-12" id="resultados"><div class="card"><div class="card-header">Resultados de gestión <span class="muted small">· se eligen al terminar cada llamada atendida</span></div><div class="card-body">
+    {% for r in resultados %}
+    <form method="post" action="{% url 'crm:resultado_editar' embudo.pk r.pk %}" class="d-flex align-items-center gap-2 py-1 {% if not r.activo %}opacity-50{% endif %}">{% csrf_token %}
+      <div class="flex-grow-1 small"><b>{{ r.nombre }}</b>
+        {% if r.contactado %}<span class="chip ok">habló con el cliente</span>{% else %}<span class="chip">no habló</span>{% endif %}
+        {% if r.pide_fecha %}<span class="chip info">pide fecha de rellamado</span>{% endif %}
+        {% if r.mover_a %}<span class="chip warn">mueve a {{ r.mover_a }}</span>{% endif %}
+        {% if not r.embudo_id %}<span class="chip">global</span>{% endif %}</div>
+      <input type="hidden" name="accion" value="toggle"><button class="btn btn-xs btn-outline-secondary">{% if r.activo %}Desactivar{% else %}Activar{% endif %}</button>
+    </form>
+    {% empty %}<div class="small muted">Sin resultados cargados.</div>{% endfor %}
+    <div class="sep"></div>
+    <form method="post" action="{% url 'crm:resultado_nuevo' embudo.pk %}" class="row g-2 align-items-end">{% csrf_token %}
+      <div class="col-md-4"><label class="form-label">Nombre</label>{{ res_form.nombre }}</div>
+      <div class="col-md-3"><label class="form-label">Mover la tarjeta a</label>{{ res_form.mover_a }}</div>
+      <div class="col-md-1"><label class="form-label">Orden</label>{{ res_form.orden }}</div>
+      <div class="col-md-4 small"><label class="d-flex gap-1">{{ res_form.contactado }} Habló con el cliente</label><label class="d-flex gap-1">{{ res_form.pide_fecha }} Pide fecha para volver a llamar</label>
+        <label class="d-flex gap-1"><input type="checkbox" name="solo_este" value="1" class="form-check-input" checked> Solo para este embudo</label><input type="hidden" name="activo" value="on"></div>
+      <div class="col-12"><button class="btn btn-sm btn-outline-primary"><i class="bi bi-plus"></i> Agregar resultado</button></div>
+    </form>
+  </div></div></div>
   <div class="col-lg-6" id="tipificaciones"><div class="card"><div class="card-header">Tipificaciones de cierre</div><div class="card-body">
     {% regroup tipificaciones by get_resultado_display as grupos %}
     {% for g in grupos %}<div class="section-title mt-2">{{ g.grouper }}</div>

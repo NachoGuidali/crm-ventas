@@ -15,6 +15,13 @@
   <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><div class="v">{{ stats.ventas_mes }}</div><div class="l">Ventas del mes</div></div></div>
 </div>
 {% if not user.disponible %}<div class="alert alert-warning py-2"><i class="bi bi-moon"></i> Estás como <b>No disponible</b>: no te llegan prospectos nuevos. Cambialo arriba a la derecha.</div>{% endif %}
+{% if cola.prioritarias %}<div class="card mb-3" style="border-color:rgba(239,68,68,.4)"><div class="card-header">🔥 Prioridad: atender primero</div>
+  <div class="d-flex flex-wrap">{% for o in cola.prioritarias %}<div class="cola-item" style="min-width:280px;flex:1">
+    <div class="ic"><i class="bi bi-fire text-danger"></i></div>
+    <div class="flex-grow-1" style="min-width:0"><a class="nom" href="{% url 'crm:oportunidad_detalle' o.pk %}?desde=cola">{{ o.contacto.nombre }}</a>
+      <div class="small muted">{{ o.prioridad_motivo|default:"Prioridad" }} · {{ o.etapa }}</div></div>
+    {% if o.contacto.telefono %}<button class="btn btn-xs btn-outline-primary" data-llamar data-op="{{ o.pk }}"><i class="bi bi-telephone"></i></button>{% endif %}
+  </div>{% endfor %}</div></div>{% endif %}
 <div class="row g-3">
   <div class="col-lg-4"><div class="card h-100"><div class="card-header">1 · Tareas de hoy y vencidas</div>
     {% for t in cola.tareas %}<div class="cola-item {% if t.vencida %}vencida{% endif %}">

@@ -238,6 +238,12 @@ class Llamada(models.Model):
     origen_registro = models.CharField(max_length=15, blank=True,
                                        help_text='webhook / polling / click2call / discador / demo')
     procesada = models.BooleanField(default=False, help_text='Se aplicó la lógica de fin de llamada.')
+    # Resultado de la gestión (lo carga el agente al cortar)
+    resultado = models.ForeignKey('crm.ResultadoGestion', null=True, blank=True, on_delete=models.PROTECT,
+                                  related_name='llamadas')
+    resultado_nota = models.TextField(blank=True)
+    calificada_at = models.DateTimeField(null=True, blank=True)
+    calificada_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -245,6 +251,11 @@ class Llamada(models.Model):
     class Meta:
         ordering = ['-inicio_at']
         indexes = [models.Index(fields=['agente', 'estado']), models.Index(fields=['contacto', '-inicio_at'])]
+
+    @property
+    def id_grabacion(self):
+        """Identificador de la llamada/grabación en Anura (cdrid), para buscarla allá."""
+        return self.call_id or self.anura_uuid
 
     def __str__(self):
         return f'{self.get_direccion_display()} {self.numero} ({self.get_estado_display()})'

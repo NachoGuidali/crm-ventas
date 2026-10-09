@@ -398,6 +398,8 @@ def _al_finalizar(llamada, config):
         nombre = llamada.contacto.nombre if llamada.contacto_id else llamada.numero
         url = op.get_absolute_url() if op else (llamada.contacto.get_absolute_url() if llamada.contacto_id else '')
         responsable = op.agente if op and op.agente_id else llamada.agente
+        if responsable is None and op is None and llamada.contacto_id:
+            responsable = crm.responsable_cliente(llamada.contacto)  # cliente (socio) sin tarjeta abierta
         if responsable:
             notificar(responsable, 'llamada_perdida', f'Llamada perdida de {nombre}', llamada.numero, url)
         else:
@@ -576,7 +578,10 @@ def agentes_libres(campania):
                 .select_related('agente'))
     ocupados = set(Llamada.objects.filter(estado__in=Llamada.ESTADOS_VIVOS, inicio_at__gte=ahora - timedelta(hours=3))
                    .values_list('agente_id', flat=True))
-    return [s for s in sesiones if s.agente_id not in ocupados]
+    # Sin calificar la última llamada atendida no se le pasa la próxima
+    sin_calificar = set(Llamada.objects.filter(q_sin_calificar(), inicio_at__gte=ahora - timedelta(days=7))
+                        .values_list('agente_id', flat=True))
+    return [s for s in sesiones if s.agente_id not in ocupados and s.agente_id not in sin_calificar]
 
 
 def tomar_siguiente(campania, agente):
@@ -722,3 +727,76 @@ PLANTILLA_WEBHOOK = """{
   "custom1": "{{ custom1 }}",
   "recordingUrl": "{{ audio_file_mp3 }}"
 }"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Resultado de la gestión (calificación obligatoria de cada llamada atendida)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def q_sin_calificar():
+    """Llamadas atendidas de una oportunidad cuyo embudo pide resultado y que el agente todavía no calificó."""
+    from django.db.models import Q
+    return Q(estado=Llamada.ESTADO_ATENDIDA, calificada_at__isnull=True, agente__isnull=False,
+             oportunidad__isnull=False, oportunidad__embudo__exigir_resultado=True)
+
+
+def pendiente_de_calificar(user):
+    """La llamada más vieja que el agente tiene sin calificar (últimos 7 días), o None."""
+    return (Llamada.objects.filter(q_sin_calificar(), agente=user, inicio_at__gte=timezone.now() - timedelta(days=7))
+            .select_related('contacto', 'oportunidad__embudo').order_by('inicio_at').first())
+
+
+def pendiente_json(llamada):
+    if llamada is None:
+        return None
+    from apps.crm.models import ResultadoGestion
+    op = llamada.oportunidad
+    return {
+        'id': llamada.pk, 'nombre': llamada.contacto.nombre if llamada.contacto_id else llamada.numero,
+        'numero': llamada.numero, 'url': op.get_absolute_url() if op else '',
+        'cuando': timezone.localtime(llamada.inicio_at).strftime('%d/%m %H:%M'),
+        'resultados': [{'id': r.pk, 'nombre': r.nombre, 'pide_fecha': r.pide_fecha}
+                       for r in ResultadoGestion.para(op.embudo if op else None)],
+    }
+
+
+def calificar_llamada(llamada, resultado, usuario, nota='', volver_a_llamar=None):
+    """Registra el resultado de la gestión: actividad, rellamado, movimiento de etapa y libera al agente."""
+    from apps.crm import services as crm
+    from apps.crm.models import Actividad, Oportunidad, ResultadoGestion, Tarea
+    op = llamada.oportunidad
+    if Llamada.objects.filter(pk=llamada.pk, calificada_at__isnull=False).exists():
+        return False  # ya estaba calificada (doble clic / otra pestaña)
+    validos = ResultadoGestion.para(op.embudo if op else None)
+    if not validos.filter(pk=resultado.pk).exists():
+        raise ErrorTelefonia('Ese resultado no aplica a este embudo.')
+    if resultado.pide_fecha and not volver_a_llamar:
+        raise ErrorTelefonia('Indicá cuándo volver a llamar.')
+    nota = (nota or '').strip()
+    ahora = timezone.now()
+    actualizadas = Llamada.objects.filter(pk=llamada.pk, calificada_at__isnull=True).update(
+        resultado=resultado, resultado_nota=nota, calificada_at=ahora, calificada_por=usuario)
+    if not actualizadas:
+        return False  # ya estaba calificada (doble clic / otra pestaña)
+    texto = f'{_texto_llamada(llamada)} · Resultado: {resultado.nombre}' + (f' — {nota}' if nota else '')
+    if not Actividad.objects.filter(llamada=llamada).update(texto=texto) and llamada.contacto_id:
+        Actividad.objects.create(contacto_id=llamada.contacto_id, oportunidad=op, tipo=Actividad.TIPO_LLAMADA,
+                                 llamada=llamada, usuario=llamada.agente, texto=texto, created_at=llamada.inicio_at)
+    if op is not None:
+        op.refresh_from_db()
+        crm.tocar(op)
+        if op.prioritaria:
+            Oportunidad.objects.filter(pk=op.pk).update(prioritaria=False)
+        if volver_a_llamar and op.activa:
+            crm.crear_tarea(usuario, op.agente or usuario, f'Volver a llamar a {op.contacto.nombre}', volver_a_llamar,
+                            oportunidad=op, tipo=Tarea.TIPO_LLAMADA)
+        destino = resultado.mover_a
+        if destino is not None and op.activa and destino.embudo_id == op.embudo_id and not destino.es_cierre \
+                and op.etapa_id != destino.pk:
+            try:
+                crm.mover_etapa(op, destino, usuario, nota=f'Resultado de la llamada: {resultado.nombre}')
+            except crm.ErrorNegocio as e:
+                logger.info('Resultado %s: no se movió la oportunidad #%s: %s', resultado, op.pk, e)
+    # El tiempo hasta calificar es trabajo post llamada: recién ahora el discador le pasa la próxima
+    AgenteDiscador.objects.filter(agente_id=llamada.agente_id).update(libre_desde=ahora)
+    return True

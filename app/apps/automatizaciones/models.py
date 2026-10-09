@@ -14,17 +14,22 @@ class AccionEtapa(models.Model):
     TIPO_EMBUDO = 'embudo'
     TIPO_ETAPA = 'etapa'
     TIPO_SMS = 'sms'
+    TIPO_REASIGNAR = 'reasignar'
+    TIPO_PRIORIDAD = 'prioridad'
+    TIPO_ETIQUETA = 'etiqueta'
     DISP_ENTRADA = 'entrada'
     DISP_SIN_RESPUESTA = 'sin_respuesta'
     DISP_RESPUESTA = 'respuesta'
     DISP_SIN_ACTIVIDAD = 'sin_actividad'
     DISP_DESPUES_DE = 'despues_de'
+    DISP_REINGRESO = 'reingreso'
     DISPARADORES = [
         (DISP_ENTRADA, 'Al entrar a la etapa'),
         (DISP_SIN_RESPUESTA, 'Si el cliente no responde (en el tiempo de demora desde que entró a la etapa)'),
         (DISP_RESPUESTA, 'Cuando el cliente responde (WhatsApp o llamada atendida) estando en la etapa'),
         (DISP_SIN_ACTIVIDAD, 'Si no hay ninguna actividad durante el tiempo de demora'),
         (DISP_DESPUES_DE, 'Después de que se ejecutó otra automatización (secuencia)'),
+        (DISP_REINGRESO, 'Cuando el lead reingresa (vuelve a escribir, llenar un formulario o se importa de nuevo)'),
     ]
     TIPO_CHOICES = [
         (TIPO_WHATSAPP, 'Enviar WhatsApp al prospecto'),
@@ -35,7 +40,14 @@ class AccionEtapa(models.Model):
         (TIPO_NOTIF_SUPERVISORES, 'Notificar a supervisión'),
         (TIPO_EMBUDO, 'Pasar a otro embudo'),
         (TIPO_ETAPA, 'Mover a otra etapa / cerrar'),
+        (TIPO_REASIGNAR, 'Reasignar a otro vendedor (reproceso)'),
+        (TIPO_PRIORIDAD, 'Marcar como prioridad'),
+        (TIPO_ETIQUETA, 'Poner una etiqueta al contacto'),
     ]
+    REPARTO_EMBUDO = 'embudo'
+    REPARTO_MENOR_CARGA = 'menor_carga'
+    REPARTO_CHOICES = [(REPARTO_MENOR_CARGA, 'Al que tenga menos prospectos abiertos (parejo)'),
+                       (REPARTO_EMBUDO, 'Según la regla del embudo (rotativa / menor carga)')]
     MODO_CREAR = 'crear'
     MODO_MOVER = 'mover'
     MODO_VOLVER = 'volver'
@@ -50,11 +62,15 @@ class AccionEtapa(models.Model):
     ASIGNAR_CHOICES = [('mismo', 'Al mismo agente'), ('embudo', 'Según la regla del embudo de destino'),
                        ('usuario', 'A un usuario fijo')]
     ICONOS = {TIPO_WHATSAPP: 'whatsapp', TIPO_EMAIL: 'envelope', TIPO_TAREA: 'calendar-plus',
-              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone', TIPO_EMBUDO: 'signpost-split', TIPO_ETAPA: 'arrow-right-circle', TIPO_SMS: 'phone'}
+              TIPO_NOTIF_AGENTE: 'bell', TIPO_NOTIF_SUPERVISORES: 'megaphone', TIPO_EMBUDO: 'signpost-split', TIPO_ETAPA: 'arrow-right-circle', TIPO_SMS: 'phone',
+              TIPO_REASIGNAR: 'arrow-left-right', TIPO_PRIORIDAD: 'fire', TIPO_ETIQUETA: 'tag'}
 
     embudo = models.ForeignKey('crm.Embudo', on_delete=models.CASCADE, related_name='acciones')
     etapa = models.ForeignKey('crm.Etapa', on_delete=models.CASCADE, related_name='acciones',
                               verbose_name='Cuando entra a la etapa')
+    otras_etapas = models.ManyToManyField('crm.Etapa', blank=True, related_name='+',
+                                          verbose_name='También en estas etapas')
+    todas_las_etapas = models.BooleanField(default=False, verbose_name='En todas las etapas abiertas del embudo')
     nombre = models.CharField(max_length=120)
     disparador = models.CharField(max_length=15, choices=DISPARADORES, default=DISP_ENTRADA, verbose_name='Cuándo')
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default=TIPO_WHATSAPP)
@@ -105,6 +121,23 @@ class AccionEtapa(models.Model):
     usuario_destino = models.ForeignKey('users.User', null=True, blank=True, on_delete=models.SET_NULL,
                                         related_name='+', verbose_name='Usuario')
 
+    # Condiciones: solo para ciertas campañas / etiquetas
+    solo_pautas = models.ManyToManyField('pautas.Pauta', blank=True, related_name='+',
+                                         verbose_name='Solo leads de estas pautas / campañas')
+    solo_etiquetas = models.ManyToManyField('crm.Etiqueta', blank=True, related_name='+',
+                                            verbose_name='Solo si el contacto tiene alguna de estas etiquetas')
+    excluir_etiquetas = models.ManyToManyField('crm.Etiqueta', blank=True, related_name='+',
+                                               verbose_name='Nunca si tiene alguna de estas etiquetas')
+
+    # Reasignar (reproceso)
+    reparto = models.CharField(max_length=12, choices=REPARTO_CHOICES, default=REPARTO_MENOR_CARGA,
+                               verbose_name='Repartir')
+    volver_a_etapa = models.ForeignKey('crm.Etapa', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+                                       verbose_name='Y volverla a la etapa',
+                                       help_text='Opcional (ej. "Nuevo"), para que se trabaje de cero.')
+    # Etiqueta
+    etiqueta = models.ForeignKey('crm.Etiqueta', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+
     orden = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -120,7 +153,57 @@ class AccionEtapa(models.Model):
     def icono(self):
         return self.ICONOS.get(self.tipo, 'lightning')
 
+    def ids_etapas(self):
+        """Etapas donde aplica: la principal, las adicionales o todas las abiertas del embudo."""
+        from apps.crm.models import Etapa
+        if self.todas_las_etapas:
+            return list(Etapa.objects.filter(embudo_id=self.embudo_id, tipo=Etapa.TIPO_NORMAL).values_list('pk', flat=True))
+        return [self.etapa_id] + [e.pk for e in self.otras_etapas.all()]
+
+    def aplica_a(self, etapa_id):
+        return etapa_id in self.ids_etapas()
+
+    @classmethod
+    def q_etapa(cls, etapa_id, embudo_id):
+        from django.db.models import Q
+        from apps.crm.models import Etapa
+        normal = Etapa.objects.filter(pk=etapa_id, tipo=Etapa.TIPO_NORMAL).exists()
+        q = Q(etapa_id=etapa_id) | Q(otras_etapas__id=etapa_id)
+        return q | Q(todas_las_etapas=True, embudo_id=embudo_id) if normal else q
+
+    def condiciones_ok(self, op):
+        """(cumple, motivo) según las condiciones de pauta y etiquetas."""
+        pautas = {p.pk for p in self.solo_pautas.all()}
+        if pautas and op.pauta_id not in pautas:
+            return False, 'El lead no es de las pautas elegidas.'
+        etiquetas = set(op.contacto.etiquetas.values_list('pk', flat=True))
+        solo = {e.pk for e in self.solo_etiquetas.all()}
+        if solo and not (solo & etiquetas):
+            return False, 'El contacto no tiene las etiquetas requeridas.'
+        if {e.pk for e in self.excluir_etiquetas.all()} & etiquetas:
+            return False, 'El contacto tiene una etiqueta excluida.'
+        return True, ''
+
+    def resumen_condiciones(self):
+        partes = []
+        for titulo, rel in (('pautas', self.solo_pautas), ('con etiqueta', self.solo_etiquetas),
+                            ('sin etiqueta', self.excluir_etiquetas)):
+            nombres = [str(x) for x in rel.all()]
+            if nombres:
+                partes.append(f'{titulo}: {", ".join(nombres)}')
+        return ' · '.join(partes)
+
+    def resumen_etapas(self):
+        if self.todas_las_etapas:
+            return 'todas las etapas'
+        otras = [e.nombre for e in self.otras_etapas.all()]
+        return ', '.join([str(self.etapa)] + otras)
+
     def resumen_embudo(self):
+        if self.tipo == self.TIPO_REASIGNAR:
+            return 'Reasigna a otro vendedor' + (f' y vuelve a {self.volver_a_etapa}' if self.volver_a_etapa_id else '')
+        if self.tipo == self.TIPO_ETIQUETA:
+            return f'Etiqueta «{self.etiqueta}»'
         if self.tipo == self.TIPO_ETAPA:
             return f'Pasa a {self.mover_a}' + (f' ({self.tipificacion})' if self.tipificacion_id else '')
         if self.tipo != self.TIPO_EMBUDO:

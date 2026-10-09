@@ -289,7 +289,7 @@ class Plantilla(models.Model):
     @classmethod
     def variables_disponibles(cls):
         from apps.crm.models import CampoPersonalizado
-        return cls.VARIABLES_DISPONIBLES + [(c.slug, f'★ {c.nombre}') for c in CampoPersonalizado.activos()]
+        return cls.VARIABLES_DISPONIBLES + [(c.slug, f'★ {c.nombre}') for c in CampoPersonalizado.activos() if not c.es_archivo]
 
     def valores_para(self, contacto, oportunidad=None, agente=None):
         ctx = contexto_variables(contacto, oportunidad, agente)
@@ -333,7 +333,7 @@ def _extra_para_mensajes(contacto):
     if not contacto or not contacto.datos_extra:
         return {}
     from apps.crm.models import CampoPersonalizado
-    campos = {c.slug: c for c in CampoPersonalizado.activos()}
+    campos = {c.slug: c for c in CampoPersonalizado.activos() if not c.es_archivo}
     return {slug: campos[slug].valor_display(v) for slug, v in contacto.datos_extra.items() if slug in campos}
 
 

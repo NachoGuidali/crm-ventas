@@ -51,6 +51,17 @@
   </tr>{% empty %}<tr><td colspan="11"><div class="empty-state"><div class="empty-icon"><i class="bi bi-megaphone"></i></div>Todavía no hay pautas.{% if puede_editar %} <a href="{% url 'pautas:nueva' %}">Crear la primera</a>{% endif %}</div></td></tr>{% endfor %}</tbody>
 </table></div></div>
 
+<div class="card mb-3"><div class="card-header">Gestión por pauta <span class="muted small">· lo que se hizo en el período con los leads de cada pauta</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-variant-numeric:tabular-nums">
+  <thead><tr><th>Pauta</th><th class="text-end">Leads</th><th class="text-end">Llamadas</th><th class="text-end">Atendidas</th><th class="text-end">Minutos</th>
+    <th class="text-end" title="Llamadas por lead: cuántas vueltas se le dio a la base">Llamadas x lead</th><th class="text-end">WhatsApp enviados</th><th class="text-end">Emails</th><th class="text-end">Ventas</th></tr></thead>
+  <tbody>{% for f in filas %}{% if f.leads or f.gestion %}<tr>
+    <td>{% if f.pauta %}{{ f.pauta }}{% else %}<span class="muted">Sin pauta</span>{% endif %}</td>
+    <td class="text-end">{{ f.leads }}</td><td class="text-end">{{ f.gestion.llamadas|default:"·" }}</td><td class="text-end">{{ f.gestion.atendidas|default:"·" }}</td>
+    <td class="text-end">{{ f.gestion.minutos|default:"·" }}</td><td class="text-end">{{ f.vueltas|default:"·" }}</td>
+    <td class="text-end">{{ f.gestion.whatsapp|default:"·" }}</td><td class="text-end">{{ f.gestion.emails|default:"·" }}</td><td class="text-end fw-semibold">{{ f.ventas }}</td>
+  </tr>{% endif %}{% endfor %}</tbody></table></div></div>
+
 <div class="row g-3">
   <div class="col-lg-6"><div class="card h-100 viz-root"><div class="card-header">Costo por cliente, por pauta</div><div class="card-body">
     {% for f in filas %}{% if f.cpa %}<div class="bar-row"><span class="lbl" title="{{ f.pauta }}">{{ f.pauta }}</span><div class="track"><div class="fill" data-v="{{ f.cpa|stringformat:'s' }}" data-max="{{ max_cpa|stringformat:'s' }}"></div></div><span class="num" style="min-width:90px">{{ f.cpa|pesos }}</span></div>{% endif %}{% empty %}{% endfor %}

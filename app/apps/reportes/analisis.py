@@ -2,7 +2,7 @@
 Reportes comerciales: leads únicos, embudo de conversión etapa a etapa, pipeline por vendedora y actividad por
 vendedora. Todo se calcula con datos que el CRM ya registra (oportunidades, historial, mensajes, llamadas).
 """
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, F, Max, Q, Sum
 
 
 def _pct(a, b):
@@ -97,6 +97,7 @@ def actividad_vendedoras(ini, fin, agentes=None):
     """
     from apps.crm.models import Actividad, Tarea
     from apps.telefonia.models import Llamada
+    from apps.telefonia.services import q_sin_calificar
     from apps.users.models import User
     from apps.whatsapp.models import Mensaje
 
@@ -119,7 +120,9 @@ def actividad_vendedoras(ini, fin, agentes=None):
                       'oportunidad__agente', n=Count('pk'))
     llamadas = por(Llamada.objects.filter(inicio_at__range=(ini, fin), agente__isnull=False), 'agente',
                    n=Count('pk'), salientes=Count('pk', filter=Q(direccion=Llamada.DIR_SALIENTE)),
-                   atendidas=Count('pk', filter=Q(estado=Llamada.ESTADO_ATENDIDA)), seg=Sum('duracion_seg'))
+                   atendidas=Count('pk', filter=Q(estado=Llamada.ESTADO_ATENDIDA)), seg=Sum('duracion_seg'),
+                   efectivas=Count('pk', filter=Q(resultado__contactado=True)),
+                   sin_calificar=Count('pk', filter=q_sin_calificar()))
     tareas = por(Tarea.objects.filter(estado=Tarea.ESTADO_COMPLETADA, completada_at__range=(ini, fin),
                                       asignado_a__isnull=False), 'asignado_a', n=Count('pk'))
     ids = set(manuales) | set(automaticos) | set(propias) | set(emails_auto) | set(llamadas) | set(tareas)
@@ -136,6 +139,7 @@ def actividad_vendedoras(ini, fin, agentes=None):
             'emails_auto': emails_auto.get(u.pk, {}).get('n', 0), 'sms': p.get('sms', 0),
             'llamadas': ll.get('n', 0), 'llamadas_salientes': ll.get('salientes', 0),
             'llamadas_atendidas': ll.get('atendidas', 0), 'minutos': round(seg / 60),
+            'efectivas': ll.get('efectivas', 0), 'sin_calificar': ll.get('sin_calificar', 0),
             'promedio_seg': round(seg / ll['atendidas']) if ll.get('atendidas') else 0,
             'notas': p.get('notas', 0), 'intentos': p.get('intentos', 0), 'etapas': p.get('etapas', 0),
             'tareas': tareas.get(u.pk, {}).get('n', 0),
@@ -146,7 +150,8 @@ def actividad_vendedoras(ini, fin, agentes=None):
 COLUMNAS_ACTIVIDAD = [
     ('mensajes', 'WhatsApp enviados'), ('plantillas', 'de ellos, plantillas'), ('automaticos', 'WhatsApp automáticos'),
     ('emails', 'Emails'), ('emails_auto', 'Emails automáticos'), ('sms', 'SMS'), ('llamadas', 'Llamadas'),
-    ('llamadas_atendidas', 'Atendidas'), ('minutos', 'Minutos'), ('promedio_seg', 'Duración prom. (s)'),
+    ('llamadas_atendidas', 'Atendidas'), ('efectivas', 'Habló con el cliente'), ('sin_calificar', 'Sin calificar'),
+    ('minutos', 'Minutos'), ('promedio_seg', 'Duración prom. (s)'),
     ('intentos', 'Intentos'), ('notas', 'Notas'), ('etapas', 'Cambios de etapa'), ('tareas', 'Tareas completadas'),
 ]
 
@@ -322,3 +327,61 @@ def proyeccion(embudo, dias_historia=90):
                         'esperadas': round(en_curso * tasa, 1)})
     return {'ventas_mes': ventas_mes, 'ritmo_fin_de_mes': ritmo, 'pipeline_esperadas': round(esperadas),
             'detalle': detalle, 'dias_historia': dias_historia}
+
+
+def resultados_gestion(ini, fin, embudo=None):
+    """Resultado de las llamadas atendidas por vendedora (filas) y resultado (columnas), con las sin calificar."""
+    from apps.crm.models import ResultadoGestion
+    from apps.telefonia.models import Llamada
+    from apps.telefonia.services import q_sin_calificar
+    qs = Llamada.objects.filter(inicio_at__range=(ini, fin), agente__isnull=False, estado=Llamada.ESTADO_ATENDIDA)
+    if embudo is not None:
+        qs = qs.filter(oportunidad__embudo=embudo)
+    conteo = {(r['agente'], r['resultado']): r['n'] for r in qs.filter(resultado__isnull=False)
+              .values('agente', 'resultado').annotate(n=Count('pk'))}
+    sin = dict(qs.filter(q_sin_calificar()).values_list('agente').annotate(n=Count('pk')).values_list('agente', 'n'))
+    if not conteo and not sin:
+        return None
+    resultados = list(ResultadoGestion.objects.filter(pk__in={r for _, r in conteo}).order_by('orden', 'nombre'))
+    from apps.users.models import User
+    filas = []
+    for u in User.objects.filter(pk__in={a for a, _ in conteo} | set(sin)).order_by('first_name', 'username'):
+        celdas = [conteo.get((u.pk, r.pk), 0) for r in resultados]
+        filas.append({'u': u, 'celdas': celdas, 'sin': sin.get(u.pk, 0), 'total': sum(celdas) + sin.get(u.pk, 0)})
+    totales = [sum(f['celdas'][i] for f in filas) for i in range(len(resultados))]
+    return {'resultados': resultados, 'filas': filas, 'totales': totales, 'sin': sum(sin.values()),
+            'total': sum(f['total'] for f in filas)}
+
+
+def gestion_por(campo, ini, fin, embudo=None):
+    """
+    Cuánto se trabajó cada pauta (campo='pauta') o base importada (campo='lote') en el período: llamadas, atendidas,
+    minutos, WhatsApp y emails enviados a esos leads. {id: {...}} (id None = sin pauta / sin base).
+    """
+    from apps.automatizaciones.models import EmailEnviado
+    from apps.telefonia.models import Llamada
+    from apps.whatsapp.models import Mensaje
+    filtro_op = {'oportunidad__embudo': embudo} if embudo is not None else {}
+    res = {}
+
+    def sumar(filas, *claves):
+        for r in filas:
+            d = res.setdefault(r['k'], {'llamadas': 0, 'atendidas': 0, 'seg': 0, 'whatsapp': 0, 'emails': 0})
+            for c in claves:
+                d[c] += r[c] or 0
+
+    sumar(Llamada.objects.filter(inicio_at__range=(ini, fin), oportunidad__isnull=False, **filtro_op)
+          .values(k=F(f'oportunidad__{campo}')).annotate(llamadas=Count('pk'),
+                                                          atendidas=Count('pk', filter=Q(estado=Llamada.ESTADO_ATENDIDA)),
+                                                          seg=Sum('duracion_seg')),
+          'llamadas', 'atendidas', 'seg')
+    rel = 'conversacion__contacto__oportunidades'
+    filtro_msg = {f'{rel}__embudo': embudo} if embudo is not None else {}
+    sumar(Mensaje.objects.filter(direccion=Mensaje.DIR_SALIENTE, timestamp__range=(ini, fin),
+                                 conversacion__contacto__isnull=False, **filtro_msg)
+          .values(k=F(f'{rel}__{campo}')).annotate(whatsapp=Count('pk', distinct=True)), 'whatsapp')
+    sumar(EmailEnviado.objects.filter(enviado_at__range=(ini, fin), oportunidad__isnull=False, **filtro_op)
+          .values(k=F(f'oportunidad__{campo}')).annotate(emails=Count('pk')), 'emails')
+    for d in res.values():
+        d['minutos'] = round(d.pop('seg') / 60)
+    return res

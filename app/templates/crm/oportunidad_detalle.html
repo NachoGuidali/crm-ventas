@@ -9,6 +9,8 @@
         <h1 class="nombre">{{ contacto.nombre }}</h1>
         <span class="badge bg-{{ op.get_estado_badge }}">{{ op.get_estado_display }}</span>
         {% if op.tipificacion %}<span class="chip">{{ op.tipificacion.categoria }}{% if op.tipificacion.categoria %}: {% endif %}{{ op.tipificacion }}</span>{% endif %}
+        {% if op.prioritaria %}<span class="chip danger" title="{{ op.prioridad_motivo }}">🔥 Prioridad{% if op.prioridad_motivo %}: {{ op.prioridad_motivo|truncatechars:40 }}{% endif %}</span>{% endif %}
+        {% if op.vencida_at and op.activa %}<span class="chip warn" title="Pasó el plazo de la ficha el {{ op.vencida_at|date:'d/m H:i' }}"><i class="bi bi-hourglass-bottom"></i> Ficha vencida</span>{% endif %}
         {% if contacto.no_contactar %}<span class="chip danger"><i class="bi bi-slash-circle"></i> No contactar</span>{% endif %}
         {% if contacto.telefono_invalido %}<span class="chip danger">Teléfono inválido</span>{% endif %}
         {% for e in contacto.etiquetas.all %}<span class="chip" style="border-color:{{ e.color }};color:{{ e.color }}">{{ e }}</span>{% endfor %}
@@ -29,6 +31,7 @@
         {% if contacto.telefono %}<a class="btn btn-success btn-sm" href="#whatsapp" onclick="document.querySelector('[data-bs-target=\'#tabWa\']').click()"><i class="bi bi-whatsapp"></i> WhatsApp</a>{% endif %}
         {% if contacto.email %}<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modalEmail"><i class="bi bi-envelope"></i> Email</button>{% endif %}
         {% if sms_activo and contacto.telefono %}<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modalSms"><i class="bi bi-phone"></i> SMS</button>{% endif %}
+        {% if op.activa %}<button class="btn btn-sm {% if op.prioritaria %}btn-danger{% else %}btn-outline-danger{% endif %}" data-accion="{% url 'crm:oportunidad_accion' op.pk 'prioridad' %}" title="{% if op.prioritaria %}Quitar la prioridad{% else %}Marcar como prioridad: aparece primero en Mi día, el tablero y el discador{% endif %}">🔥</button>{% endif %}
         {% if op.estado == 'abierta' %}
         <div class="btn-group btn-group-sm">
           <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-telephone-x"></i> Intento sin éxito</button>
@@ -142,6 +145,21 @@
           <dt>Localidad</dt><dd>{{ contacto.localidad|default:"—" }}{% if contacto.provincia %}, {{ contacto.provincia }}{% endif %}</dd>
           {% for etiqueta, valor, campo in datos_extra %}<dt>{{ etiqueta }}</dt><dd>{{ valor|default:"—" }}</dd>{% endfor %}
         </dl>
+        {% if documentos %}<div class="section-title mt-3"><i class="bi bi-paperclip"></i> Documentos</div>
+        {% for campo, lista in documentos %}<div class="mb-2">
+          <div class="small fw-semibold">{{ campo.nombre }}</div>
+          {% for a in lista %}<form method="post" action="{% url 'crm:contacto_archivo' contacto.pk %}" class="d-flex align-items-center gap-2 small">{% csrf_token %}
+            <input type="hidden" name="campo" value="{{ campo.slug }}"><input type="hidden" name="oportunidad" value="{{ op.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <a href="{{ a.url }}" target="_blank" class="text-truncate"><i class="bi bi-file-earmark"></i> {{ a.nombre }}</a>
+            <span class="muted text-nowrap" style="font-size:11px">{{ a.fecha }}{% if a.origen %} · {{ a.origen }}{% endif %}</span>
+            <button name="quitar" value="{{ forloop.counter0 }}" class="btn btn-link btn-sm p-0 text-danger ms-auto" title="Quitar" onclick="return confirm('¿Quitar el archivo?')"><i class="bi bi-x"></i></button>
+          </form>{% empty %}<div class="small muted">Sin archivos.</div>{% endfor %}
+          <form method="post" enctype="multipart/form-data" action="{% url 'crm:contacto_archivo' contacto.pk %}" class="mt-1">{% csrf_token %}
+            <input type="hidden" name="campo" value="{{ campo.slug }}"><input type="hidden" name="oportunidad" value="{{ op.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <label class="btn btn-xs btn-outline-secondary mb-0"><i class="bi bi-upload"></i> Subir<input type="file" name="archivo" multiple class="d-none" onchange="this.form.submit()"></label>
+          </form>
+        </div>{% endfor %}
+        <div class="form-text">También podés guardar acá lo que el cliente manda por WhatsApp: botón <i class="bi bi-paperclip"></i> en el mensaje.</div>{% endif %}
         <form method="post" action="{% url 'crm:contacto_editar' contacto.pk %}" id="editContacto" class="collapse">{% csrf_token %}<input type="hidden" name="oportunidad" value="{{ op.pk }}">
           <input type="hidden" name="next" value="{{ request.path }}">
           {% for f in contacto_form.campos_base %}<div class="mb-2"><label class="form-label">{{ f.label }}</label>{{ f }}</div>{% endfor %}
@@ -277,7 +295,9 @@
   if (location.hash === '#whatsapp') document.querySelector('[data-bs-target="#tabWa"]').click();
   document.querySelector('[data-bs-target="#tabWa"]').addEventListener('shown.bs.tab', () => { const m = document.getElementById('chatMsgs'); m.scrollTop = m.scrollHeight; });
   // Al terminar una llamada de esta ficha, recargar para ver la actividad y el intento registrado
-  document.addEventListener('crm:llamada-fin', () => setTimeout(() => location.reload(), 2500));
+  const enResultado = () => document.getElementById('modalResultado')?.classList.contains('show');
+  document.addEventListener('crm:llamada-fin', () => setTimeout(() => { if (!enResultado()) location.reload(); }, 3000));
+  document.addEventListener('crm:llamada-calificada', () => setTimeout(() => location.reload(), 500));
 })();
 </script>
 {% endblock %}

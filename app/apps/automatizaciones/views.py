@@ -17,21 +17,32 @@ class AccionForm(forms.ModelForm):
 
     class Meta:
         model = AccionEtapa
-        fields = ['nombre', 'etapa', 'disparador', 'accion_previa', 'tipo', 'mover_a', 'tipificacion', 'plantilla_email', 'activa', 'solo_si_sigue_en_etapa', 'solo_en_horario', 'plantilla', 'texto',
-                  'linea', 'email_asunto', 'tarea_titulo', 'tarea_vence_horas', 'modo_embudo', 'embudo_destino',
-                  'etapa_destino', 'volver_a', 'asignar_destino', 'usuario_destino']
-        widgets = {'texto': forms.Textarea(attrs={'rows': 4})}
+        fields = ['nombre', 'etapa', 'otras_etapas', 'todas_las_etapas', 'disparador', 'accion_previa', 'tipo', 'mover_a',
+                  'tipificacion', 'plantilla_email', 'activa', 'solo_si_sigue_en_etapa', 'solo_en_horario', 'plantilla',
+                  'texto', 'linea', 'email_asunto', 'tarea_titulo', 'tarea_vence_horas', 'modo_embudo', 'embudo_destino',
+                  'etapa_destino', 'volver_a', 'asignar_destino', 'usuario_destino', 'reparto', 'volver_a_etapa',
+                  'etiqueta', 'solo_pautas', 'solo_etiquetas', 'excluir_etiquetas']
+        widgets = {'texto': forms.Textarea(attrs={'rows': 4}), 'otras_etapas': forms.CheckboxSelectMultiple,
+                   'solo_pautas': forms.CheckboxSelectMultiple, 'solo_etiquetas': forms.CheckboxSelectMultiple,
+                   'excluir_etiquetas': forms.CheckboxSelectMultiple}
 
     def __init__(self, *args, embudo=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.embudo = embudo
         self.fields['etapa'].required = False
+        self.fields['reparto'].required = False
+        from apps.pautas.models import Pauta
+        self.fields['solo_pautas'].queryset = Pauta.objects.filter(activa=True).order_by('nombre')
         from .models import PlantillaEmail
         self.fields['plantilla_email'].queryset = PlantillaEmail.objects.filter(activa=True)
         self.fields['accion_previa'].queryset = AccionEtapa.objects.none()
         if embudo is not None:
             self.fields['etapa'].queryset = embudo.etapas.order_by('orden')
             self.fields['mover_a'].queryset = embudo.etapas.order_by('orden')
+            from apps.crm.models import Etapa as _Etapa
+            abiertas = embudo.etapas.filter(tipo=_Etapa.TIPO_NORMAL).order_by('orden')
+            self.fields['otras_etapas'].queryset = embudo.etapas.order_by('orden')
+            self.fields['volver_a_etapa'].queryset = abiertas
             self.fields['accion_previa'].queryset = (AccionEtapa.objects.filter(embudo=embudo)
                                                      .exclude(pk=self.instance.pk).select_related('etapa'))
             self.fields['accion_previa'].label_from_instance = lambda a: f'{a.etapa} · {a.nombre}'
@@ -56,12 +67,16 @@ class AccionForm(forms.ModelForm):
             self.fields['demora_valor'].initial = m
         for f in self.fields.values():
             w = f.widget
+            if isinstance(w, forms.CheckboxSelectMultiple):
+                w.attrs['class'] = 'form-check-input'
+                continue
             w.attrs['class'] = ('form-check-input' if isinstance(w, forms.CheckboxInput)
                                 else 'form-select' if isinstance(w, forms.Select) else 'form-control')
 
     def clean(self):
         d = super().clean()
         tipo = d.get('tipo')
+        d['reparto'] = d.get('reparto') or AccionEtapa.REPARTO_MENOR_CARGA
         if tipo == AccionEtapa.TIPO_WHATSAPP and not (d.get('plantilla') or d.get('texto')):
             self.add_error('plantilla', 'Elegí una plantilla o escribí un texto.')
         if tipo == AccionEtapa.TIPO_SMS and not d.get('texto'):
@@ -74,8 +89,14 @@ class AccionForm(forms.ModelForm):
                 self.add_error('accion_previa', 'Elegí después de qué automatización.')
             else:
                 d['etapa'] = d['accion_previa'].etapa  # la secuencia vive en la misma etapa
+        elif d.get('todas_las_etapas') and self.embudo is not None:
+            d['etapa'] = d.get('etapa') or self.embudo.etapa_inicial
         elif not d.get('etapa'):
             self.add_error('etapa', 'Elegí la etapa.')
+        if disp == AccionEtapa.DISP_DESPUES_DE:
+            d['todas_las_etapas'], d['otras_etapas'] = False, []
+        if tipo == AccionEtapa.TIPO_ETIQUETA and not d.get('etiqueta'):
+            self.add_error('etiqueta', 'Elegí la etiqueta.')
         if tipo == AccionEtapa.TIPO_EMAIL and d.get('plantilla_email'):
             self._errors.pop('texto', None)
         if disp in (AccionEtapa.DISP_SIN_RESPUESTA, AccionEtapa.DISP_SIN_ACTIVIDAD) and not d.get('demora_valor'):
@@ -118,7 +139,9 @@ class AccionListView(PermisoRequeridoMixin, View):
         embudo, embudos = embudo_actual(request)
         etapas = []
         if embudo:
-            acciones = list(AccionEtapa.objects.filter(embudo=embudo).select_related('plantilla', 'linea'))
+            acciones = list(AccionEtapa.objects.filter(embudo=embudo).select_related('plantilla', 'linea', 'etapa', 'etiqueta',
+                                                                                   'volver_a_etapa')
+                            .prefetch_related('otras_etapas', 'solo_pautas', 'solo_etiquetas', 'excluir_etiquetas'))
             for etapa in embudo.etapas.order_by('orden'):
                 etapas.append({'etapa': etapa, 'acciones': [a for a in acciones if a.etapa_id == etapa.pk]})
         return render(request, 'automatizaciones/lista.html', {'embudo': embudo, 'embudos': embudos, 'etapas': etapas})

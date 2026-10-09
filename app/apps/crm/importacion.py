@@ -60,7 +60,7 @@ _SUGERENCIAS = {
 def campos_importacion():
     """Campos fijos + campos personalizados activos (clave "cp:<slug>")."""
     from .models import CampoPersonalizado
-    return CAMPOS_IMPORTACION + [(f'cp:{c.slug}', f'★ {c.nombre}') for c in CampoPersonalizado.activos()]
+    return CAMPOS_IMPORTACION + [(f'cp:{c.slug}', f'★ {c.nombre}') for c in CampoPersonalizado.activos() if not c.es_archivo]
 
 
 def _norm(texto):
@@ -70,8 +70,9 @@ def _norm(texto):
 
 def sugerir_mapeo(columnas):
     from .models import CampoPersonalizado
-    personalizados = {_norm(c.nombre): f'cp:{c.slug}' for c in CampoPersonalizado.activos()}
-    personalizados.update({_norm(c.slug.replace('_', ' ')): f'cp:{c.slug}' for c in CampoPersonalizado.activos()})
+    personalizados = {_norm(c.nombre): f'cp:{c.slug}' for c in CampoPersonalizado.activos() if not c.es_archivo}
+    personalizados.update({_norm(c.slug.replace('_', ' ')): f'cp:{c.slug}'
+                           for c in CampoPersonalizado.activos() if not c.es_archivo})
     mapeo, usados = {}, set()
     for col in columnas:
         n = _norm(col)
@@ -262,7 +263,7 @@ def procesar_lote(lote_id):
         return 'error de lectura'
 
     from .models import CampoPersonalizado
-    personalizados = {c.slug: c for c in CampoPersonalizado.activos()}
+    personalizados = {c.slug: c for c in CampoPersonalizado.activos() if not c.es_archivo}
     contadores = {'procesados': 0, 'creados': 0, 'contactos_nuevos': 0, 'ya_existentes': 0, 'errores': 0}
     errores = []
     ImportacionLote.objects.filter(pk=lote.pk).update(total=len(filas))

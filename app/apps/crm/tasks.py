@@ -81,3 +81,9 @@ def revisar_sla():
 def recalcular_puntajes():
     from .puntaje import recalcular_todos
     return recalcular_todos()
+
+
+@shared_task(name='crm.revisar_vencimientos')
+def revisar_vencimientos():
+    from .services import revisar_vencimientos as revisar
+    return revisar()

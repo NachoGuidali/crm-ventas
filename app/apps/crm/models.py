@@ -126,6 +126,50 @@ class Embudo(models.Model):
         max_length=10, choices=REINGRESO_CHOICES, default=REINGRESO_NUEVA,
         verbose_name='Si reingresa un prospecto que se perdió antes',
     )
+    exigir_resultado = models.BooleanField(
+        default=True, verbose_name='Pedir el resultado de la gestión al terminar cada llamada atendida',
+        help_text='Al cortar se abre "Resultado de la gestión" y no se puede seguir (ni recibir la próxima llamada del '
+                  'discador) sin cargarlo.')
+
+    # Vencimiento de la ficha (cartera): pasado el plazo sin cerrarse, vuelve al reparto
+    VENCE_REASIGNAR = 'reasignar'
+    VENCE_LIBERAR = 'liberar'
+    VENCE_AVISAR = 'avisar'
+    VENCE_CHOICES = [
+        (VENCE_REASIGNAR, 'Reasignarla a otro vendedor (reparto parejo)'),
+        (VENCE_LIBERAR, 'Dejarla sin asignar (la reparte supervisión)'),
+        (VENCE_AVISAR, 'Solo avisar al vendedor y a supervisión'),
+    ]
+    vence_dias = models.PositiveSmallIntegerField(
+        default=0, verbose_name='La ficha vence a los (días)',
+        help_text='Días desde que se le asignó al vendedor sin cerrarse (venta / no venta). 0 = no vence.')
+    vence_accion = models.CharField(max_length=10, choices=VENCE_CHOICES, default=VENCE_REASIGNAR,
+                                    verbose_name='Al vencer')
+    vence_hasta_etapa = models.ForeignKey(
+        'Etapa', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='No vence desde la etapa',
+        help_text='Desde esta etapa en adelante la ficha queda siempre del vendedor (ej. Preventa).')
+
+    # Clientes (socios): a quién van sus mensajes, llamadas perdidas y reingresos
+    SOCIOS_VENDEDOR = 'vendedor'
+    SOCIOS_USUARIO = 'usuario'
+    SOCIOS_NADIE = ''
+    SOCIOS_CHOICES = [
+        (SOCIOS_VENDEDOR, 'Al vendedor que hizo la venta'),
+        (SOCIOS_USUARIO, 'A un usuario fijo (postventa / experiencia del socio)'),
+        (SOCIOS_NADIE, 'A nadie (quedan sin asignar)'),
+    ]
+    socios_a = models.CharField(max_length=10, choices=SOCIOS_CHOICES, blank=True, default=SOCIOS_VENDEDOR,
+                                verbose_name='Si escribe o llama alguien que ya es cliente, va')
+    socios_usuario = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+                                       verbose_name='Usuario de postventa')
+    clientes_de_otros = models.BooleanField(
+        default=False, verbose_name='Abrir tarjeta aunque ya sea cliente de otro embudo',
+        help_text='Desmarcado: si el número ya tiene una venta en cualquier embudo, no se abre tarjeta ni se reparte '
+                  '(queda como reingreso del cliente). Marcalo en embudos de upgrade / venta cruzada.')
+    etiqueta_venta = models.ForeignKey(
+        'Etiqueta', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='Etiqueta al cerrar como venta', help_text='Ej. "Socio": se le pone al contacto al ganar.')
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -165,6 +209,14 @@ class Embudo(models.Model):
         if momento.weekday() not in dias:
             return False
         return _hora(self.horario_desde) <= momento.time() <= _hora(self.horario_hasta)
+
+    def responsable_de_cliente(self, venta):
+        """Quién atiende a un cliente (venta cerrada) que vuelve a escribir o llamar."""
+        if self.socios_a == self.SOCIOS_USUARIO and self.socios_usuario_id and self.socios_usuario.is_active:
+            return self.socios_usuario
+        if self.socios_a == self.SOCIOS_VENDEDOR and venta is not None and venta.agente_id and venta.agente.is_active:
+            return venta.agente
+        return None
 
     def tipificaciones_disponibles(self):
         return Tipificacion.objects.filter(Q(embudo=self) | Q(embudo__isnull=True), activa=True)
@@ -283,6 +335,34 @@ class Tipificacion(models.Model):
         return self.accion == self.ACCION_POSTERGAR
 
 
+class ResultadoGestion(models.Model):
+    """Resultado de cada gestión (llamada atendida): lo elige la vendedora al cortar. Obligatorio."""
+    embudo = models.ForeignKey(Embudo, null=True, blank=True, on_delete=models.CASCADE, related_name='resultados',
+                               help_text='Vacío = aplica a todos los embudos.')
+    nombre = models.CharField(max_length=80)
+    contactado = models.BooleanField(default=True, verbose_name='Habló con el cliente',
+                                     help_text='Cuenta como contacto efectivo en los reportes.')
+    pide_fecha = models.BooleanField(default=False, verbose_name='Pide fecha para volver a llamar',
+                                     help_text='Crea la tarea de rellamado para esa fecha.')
+    mover_a = models.ForeignKey('Etapa', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+                                verbose_name='Mover la tarjeta a', help_text='Opcional. Solo etapas abiertas.')
+    orden = models.PositiveSmallIntegerField(default=0)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['orden', 'nombre']
+        verbose_name = 'Resultado de gestión'
+        verbose_name_plural = 'Resultados de gestión'
+
+    def __str__(self):
+        return self.nombre
+
+    @classmethod
+    def para(cls, embudo):
+        qs = cls.objects.filter(activo=True)
+        return qs.filter(Q(embudo=embudo) | Q(embudo__isnull=True)) if embudo else qs.filter(embudo__isnull=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Contactos (personas, únicos por teléfono) y oportunidades (tarjetas)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -298,10 +378,12 @@ class CampoPersonalizado(models.Model):
     TIPO_EMAIL = 'email'
     TIPO_TELEFONO = 'telefono'
     TIPO_URL = 'url'
+    TIPO_ARCHIVO = 'archivo'
     TIPO_CHOICES = [
         (TIPO_TEXTO, 'Texto corto'), (TIPO_TEXTO_LARGO, 'Texto largo'), (TIPO_NUMERO, 'Número'),
         (TIPO_FECHA, 'Fecha'), (TIPO_SINO, 'Sí / No'), (TIPO_LISTA, 'Lista de opciones'),
         (TIPO_EMAIL, 'Email'), (TIPO_TELEFONO, 'Teléfono'), (TIPO_URL, 'Link (URL)'),
+        (TIPO_ARCHIVO, 'Archivo / documento (ej. recibo de sueldo, DNI)'),
     ]
 
     nombre = models.CharField(max_length=80)
@@ -334,9 +416,16 @@ class CampoPersonalizado(models.Model):
             self.opciones = []
         super().save(*args, **kwargs)
 
+    @property
+    def es_archivo(self):
+        return self.tipo == self.TIPO_ARCHIVO
+
     def valor_display(self, valor):
-        if valor in (None, ''):
+        if valor in (None, '', []):
             return ''
+        if self.tipo == self.TIPO_ARCHIVO:
+            n = len(valor) if isinstance(valor, list) else 1
+            return f'{n} archivo{"s" if n != 1 else ""}'
         if self.tipo == self.TIPO_SINO:
             return 'Sí' if str(valor).lower() in ('true', '1', 'si', 'sí', 'yes') else 'No'
         if self.tipo == self.TIPO_FECHA:
@@ -526,6 +615,11 @@ class Oportunidad(models.Model):
     asignada_at = models.DateTimeField(null=True, blank=True)
     primer_contacto_at = models.DateTimeField(null=True, blank=True, db_index=True,
                                               help_text='Primera gestión del vendedor: llamada, mensaje o intento.')
+    prioritaria = models.BooleanField(default=False, db_index=True,
+                                      help_text='Marcada como prioridad (ej. reingresó): aparece primero.')
+    prioridad_motivo = models.CharField(max_length=150, blank=True)
+    vencida_at = models.DateTimeField(null=True, blank=True, editable=False,
+                                      help_text='Cuándo se procesó el vencimiento de la ficha (se limpia al reasignar).')
     sla_alerta_at = models.DateTimeField(null=True, blank=True, editable=False)
     reasignaciones_sla = models.PositiveSmallIntegerField(default=0, editable=False)
     recordatorio_enviado_at = models.DateTimeField(null=True, blank=True, editable=False)

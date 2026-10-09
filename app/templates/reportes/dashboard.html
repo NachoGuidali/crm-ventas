@@ -110,8 +110,18 @@
   <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-variant-numeric:tabular-nums">
     <thead><tr><th>Vendedora</th>{% for k, t in columnas_actividad %}<th class="text-end small">{{ t }}</th>{% endfor %}</tr></thead>
     <tbody>{% for f in actividad %}<tr><td class="text-nowrap"><a href="{% url 'reportes:mis_numeros' %}?agente={{ f.u.pk }}&{{ request.GET.urlencode }}">{{ f.u.display_name }}</a></td>{% for k, t in columnas_actividad %}<td class="text-end">{{ f|get_item:k|default:"·" }}</td>{% endfor %}</tr>
-    {% empty %}<tr><td colspan="14" class="muted text-center py-3">Sin actividad en el período.</td></tr>{% endfor %}</tbody>
+    {% empty %}<tr><td colspan="17" class="muted text-center py-3">Sin actividad en el período.</td></tr>{% endfor %}</tbody>
   </table></div></div>
+{% if resultados %}
+<div class="card mt-3"><div class="card-header d-flex align-items-center">Resultado de las llamadas atendidas <span class="muted small ms-2 me-auto">· por vendedora, en el período</span>
+    {% if resultados.sin %}<a href="{% url 'telefonia:llamadas' %}?resultado=sin" class="small text-danger"><i class="bi bi-exclamation-triangle"></i> {{ resultados.sin }} sin calificar</a>{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-variant-numeric:tabular-nums">
+    <thead><tr><th>Vendedora</th>{% for r in resultados.resultados %}<th class="text-end small">{{ r.nombre }}</th>{% endfor %}<th class="text-end small text-danger">Sin calificar</th><th class="text-end small">Total</th></tr></thead>
+    <tbody>{% for f in resultados.filas %}<tr><td class="text-nowrap">{{ f.u.display_name }}</td>{% for c in f.celdas %}<td class="text-end">{{ c|default:"·" }}</td>{% endfor %}
+      <td class="text-end">{% if f.sin %}<a class="text-danger fw-semibold" href="{% url 'telefonia:llamadas' %}?resultado=sin&agente={{ f.u.pk }}">{{ f.sin }}</a>{% else %}·{% endif %}</td><td class="text-end fw-semibold">{{ f.total }}</td></tr>{% endfor %}
+      <tr class="fw-semibold"><td>Total</td>{% for t in resultados.totales %}<td class="text-end">{{ t }}</td>{% endfor %}<td class="text-end">{{ resultados.sin }}</td><td class="text-end">{{ resultados.total }}</td></tr></tbody>
+  </table></div></div>
+{% endif %}
 <div class="card mt-3"><div class="card-header">Telefonía por vendedora <span class="muted small">· tiempo conectado, habla y after call work</span></div>
   <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-variant-numeric:tabular-nums">
     <thead><tr><th>Vendedora</th><th class="text-end">Conectada</th><th class="text-end">Llamadas</th><th class="text-end">Salientes</th><th class="text-end">Entrantes</th><th class="text-end">Atendidas</th><th class="text-end">Habla</th><th class="text-end">Prom. por llamada</th><th class="text-end" title="Tiempo entre que corta y su próxima acción en el CRM (tipificar, nota, mover, llamar), hasta 15 min">After call work prom.</th><th class="text-end" title="Tiempo hablando / tiempo conectada">Ocupación</th></tr></thead>

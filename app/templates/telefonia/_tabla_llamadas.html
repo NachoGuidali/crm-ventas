@@ -1,7 +1,7 @@
 {% load crm_extras %}
 <div class="table-responsive">
 <table class="table table-sm table-hover">
-  <thead><tr><th></th><th>Fecha</th><th>Número</th>{% if mostrar_contacto %}<th>Contacto</th>{% endif %}<th>Agente</th><th>Estado</th><th>Duración</th><th>Grabación</th></tr></thead>
+  <thead><tr><th></th><th>Fecha</th><th>Número</th>{% if mostrar_contacto %}<th>Contacto</th>{% endif %}<th>Agente</th><th>Estado</th><th>Resultado</th><th>Duración</th><th>Grabación</th><th>ID grabación</th></tr></thead>
   <tbody>
   {% for l in llamadas %}
   <tr>
@@ -11,10 +11,12 @@
     {% if mostrar_contacto %}<td>{% if l.oportunidad %}<a href="{% url 'crm:oportunidad_detalle' l.oportunidad_id %}">{{ l.contacto.nombre }}</a>{% elif l.contacto %}<a href="{% url 'crm:contacto_detalle' l.contacto_id %}">{{ l.contacto.nombre }}</a>{% else %}—{% endif %}</td>{% endif %}
     <td>{{ l.agente.display_name|default:"—" }}</td>
     <td>{{ l.get_estado_display }}</td>
+    <td class="small">{% if l.resultado_id %}{{ l.resultado.nombre }}{% if l.resultado_nota %} <i class="bi bi-chat-left-text muted" title="{{ l.resultado_nota }}"></i>{% endif %}{% elif l.estado == 'atendida' and not l.calificada_at and l.oportunidad_id %}<span class="chip warn">Sin calificar</span>{% endif %}</td>
     <td>{% if l.duracion_seg %}{{ l.duracion_seg|duracion }}{% endif %}</td>
     <td>{% if l.grabacion %}<audio controls preload="none" src="{{ l.grabacion.url }}" style="height:28px;max-width:220px"></audio>{% elif l.grabacion_estado == 'pendiente' %}<span class="muted small">descargando…</span>{% elif l.grabada %}<span class="muted small">no disponible</span>{% endif %}</td>
+    <td class="text-nowrap small">{% if l.id_grabacion %}<code class="copiable" title="Copiar">{{ l.id_grabacion }}</code>{% endif %}</td>
   </tr>
-  {% empty %}<tr><td colspan="8" class="muted text-center py-3">Sin llamadas.</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="10" class="muted text-center py-3">Sin llamadas.</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

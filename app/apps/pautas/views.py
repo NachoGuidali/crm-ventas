@@ -90,6 +90,12 @@ class AnalisisView(PermisoRequeridoMixin, View):
         embudo = Embudo.objects.filter(pk=request.GET.get('embudo') or 0).first()
         filas = services.metricas(ini, fin, embudo)
         filas.sort(key=lambda f: (f['pauta'] is None, -f['leads']))
+        from apps.reportes.analisis import gestion_por
+        gestion = gestion_por('pauta', ini, fin, embudo)
+        for f in filas:
+            g = gestion.get(f['pauta'].pk if f['pauta'] else None, {})
+            f['gestion'] = g
+            f['vueltas'] = round(g.get('llamadas', 0) / f['leads'], 1) if f['leads'] and g else None
         return render(request, 'pautas/analisis.html', {
             'filas': filas, 'totales': services.totales(filas), 'sin_pauta': services.origenes_sin_pauta(),
             'p': p, 'desde': desde, 'hasta': hasta, 'embudo': embudo, 'embudos': Embudo.objects.filter(activo=True),

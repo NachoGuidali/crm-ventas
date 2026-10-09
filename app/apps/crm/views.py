@@ -75,9 +75,10 @@ def _con_marcas(qs):
 
 
 def datos_extra_display(contacto, embudo=None):
-    """[(etiqueta, valor)] para la ficha: primero los campos configurados, después datos sueltos de importaciones."""
+    """[(etiqueta, valor)] para la ficha: primero los campos configurados, después datos sueltos de importaciones.
+    Los de tipo archivo se muestran aparte (sección Documentos)."""
     extra = contacto.datos_extra or {}
-    campos = CampoPersonalizado.activos(embudo)
+    campos = [c for c in CampoPersonalizado.activos(embudo) if not c.es_archivo]
     filas = [(c.nombre, c.valor_display(extra.get(c.slug)), c) for c in campos]
     conocidos = {c.slug for c in CampoPersonalizado.objects.all()} | {'demo', 'masivo'}
     filas += [(k, v, None) for k, v in extra.items() if k not in conocidos and v not in (None, '')]
@@ -124,7 +125,8 @@ class TableroView(LoginRequiredMixin, View):
         return render(request, 'crm/tablero.html', {
             'embudo': embudo, 'embudos': embudos, 'columnas': columnas, 'agentes': agentes_activos(),
             'tipificaciones': tipificaciones_de(embudo), 'filtros': request.GET,
-            'origenes': Oportunidad.ORIGEN_CHOICES,
+            'origenes': Oportunidad.ORIGEN_CHOICES, 'pautas': Pauta.objects.filter(activa=True).order_by('nombre'),
+            'lotes': ImportacionLote.objects.filter(embudo=embudo).order_by('-created_at')[:50],
         })
 
     @staticmethod
@@ -142,7 +144,7 @@ class TableroView(LoginRequiredMixin, View):
                   .select_related('contacto', 'agente', 'tipificacion').order_by('-cerrada_at'))
         else:
             qs = (base.filter(etapa=etapa, estado__in=Oportunidad.ESTADOS_ACTIVOS)
-                  .select_related('contacto', 'agente').order_by('estado', '-ultima_actividad_at'))
+                  .select_related('contacto', 'agente').order_by('-prioritaria', 'estado', '-ultima_actividad_at'))
         return _con_marcas(qs)
 
 
@@ -341,7 +343,8 @@ class AccionesMasivasView(LoginRequiredMixin, View):
         user, accion = request.user, request.POST.get('accion', '')
         volver = request.POST.get('volver') or request.META.get('HTTP_REFERER') or reverse('crm:oportunidades')
         datos = {k: request.POST.get(k, '') for k in ('destino_agente', 'destino_etapa', 'tipificacion', 'nota',
-                                                      'fecha', 'motivo', 'hasta', 'destino_etiqueta', 'campania')}
+                                                      'fecha', 'motivo', 'hasta', 'destino_etiqueta', 'campania',
+                                                      'titulo', 'vence', 'tipo_tarea', 'para')}
         datos['destino_agentes'] = [a for a in request.POST.getlist('destino_agentes') if a.isdigit()]
 
         qs = Oportunidad.objects.visibles_para(user)
@@ -467,6 +470,8 @@ class OportunidadDetalleView(LoginRequiredMixin, View):
             'agentes': agentes_activos(), 'tarea_form': TareaForm(user=request.user),
             'contacto_form': ContactoForm(instance=contacto),
             'datos_extra': datos_extra_display(contacto, op.embudo),
+            'documentos': [(c, (contacto.datos_extra or {}).get(c.slug) or [])
+                           for c in CampoPersonalizado.activos(op.embudo) if c.es_archivo],
             'pautas': Pauta.objects.all(),
             'puede_reabrir': request.user.tiene_permiso('reabrir'),
             'historial': op.historial.select_related('etapa_anterior', 'etapa_nueva', 'usuario')[:30],
@@ -513,6 +518,16 @@ class AccionOportunidadView(LoginRequiredMixin, View):
         from .forms import campo_formulario, valor_para_guardar
         from .models import CampoPersonalizado
         claves = [c for c in data if c != 'csrfmiddlewaretoken']
+        # Archivos obligatorios (campos de tipo archivo): se guardan primero, directo en el contacto
+        for clave, f in request.FILES.items():
+            cp = CampoPersonalizado.objects.filter(slug=clave[3:], tipo=CampoPersonalizado.TIPO_ARCHIVO).first() \
+                if clave.startswith('cp:') else None
+            if cp is not None:
+                from . import archivos
+                try:
+                    archivos.adjuntar(op.contacto, cp, f.read(), f.name, user, op)
+                except archivos.ErrorArchivo as e:
+                    return error(f'{cp.nombre}: {e}')
         campos, tipos = {}, {}
         for clave in claves:
             desc = crm.descripcion_campo(clave)
@@ -520,6 +535,8 @@ class AccionOportunidadView(LoginRequiredMixin, View):
                 continue
             if clave.startswith('cp:'):
                 cp = CampoPersonalizado.objects.get(slug=clave[3:])
+                if cp.es_archivo:
+                    continue  # ya se guardó arriba (si vino)
                 campos[clave], tipos[clave] = campo_formulario(cp), cp
             else:
                 campos[clave] = {'email': djforms.EmailField, 'fecha': djforms.DateField,
@@ -601,6 +618,12 @@ class AccionOportunidadView(LoginRequiredMixin, View):
         crm.avanzar_desde_inicial(op, user)
         return ok(mensaje='SMS enviado', recargar=True)
 
+    def _prioridad(self, request, op, data, user):
+        poner = not op.prioritaria
+        crm.marcar_prioridad(op, data.get('motivo') or f'Marcada por {user.display_name}', usuario=user,
+                             prioritaria=poner)
+        return ok(mensaje='Marcada como prioridad' if poner else 'Se quitó la prioridad', recargar=True)
+
     def _nota(self, request, op, data, user):
         texto = (data.get('texto') or '').strip()
         if not texto:
@@ -649,6 +672,31 @@ class AccionOportunidadView(LoginRequiredMixin, View):
         op.save(update_fields=['valor', 'updated_at'])
         auditoria.registrar_cambios(antes, auditoria.foto_oportunidad(op), user, op.contacto, op)
         return ok(mensaje='Valor actualizado')
+
+
+class ContactoArchivoView(LoginRequiredMixin, View):
+    """Subir / quitar archivos de los campos personalizados de tipo archivo (ficha)."""
+
+    def post(self, request, pk):
+        from . import archivos
+        contacto = get_object_or_404(Contacto.objects.visibles_para(request.user), pk=pk)
+        campo = get_object_or_404(CampoPersonalizado, slug=request.POST.get('campo'), tipo=CampoPersonalizado.TIPO_ARCHIVO)
+        op = Oportunidad.objects.filter(pk=request.POST.get('oportunidad') or 0, contacto=contacto).first()
+        destino = request.POST.get('next') or contacto.get_absolute_url()
+        try:
+            if request.POST.get('quitar', '').isdigit():
+                item = archivos.quitar(contacto, campo, int(request.POST['quitar']), request.user, op)
+                messages.success(request, f'Se quitó "{item.get("nombre")}".')
+            else:
+                subidos = request.FILES.getlist('archivo')
+                if not subidos:
+                    raise archivos.ErrorArchivo('Elegí un archivo.')
+                for f in subidos:
+                    archivos.adjuntar(contacto, campo, f.read(), f.name, request.user, op)
+                messages.success(request, f'Archivo{"s" if len(subidos) > 1 else ""} guardado{"s" if len(subidos) > 1 else ""} en «{campo.nombre}».')
+        except archivos.ErrorArchivo as e:
+            messages.error(request, str(e))
+        return redirect(destino)
 
 
 class ContactoEditarView(LoginRequiredMixin, View):
@@ -928,7 +976,15 @@ class ImportacionDetalleView(PermisoRequeridoMixin, View):
             return JsonResponse({'estado': lote.estado, 'porcentaje': lote.porcentaje, 'total': lote.total,
                                  'procesados': lote.procesados, 'creados': lote.creados,
                                  'ya_existentes': lote.ya_existentes, 'errores': lote.errores})
-        return render(request, 'crm/importacion_detalle.html', {'lote': lote})
+        from apps.reportes.analisis import gestion_por
+        from django.utils import timezone as tz
+        ops = lote.oportunidades.all()
+        resumen = ops.aggregate(leads=Count('pk'), ventas=Count('pk', filter=Q(estado=Oportunidad.ESTADO_GANADA)),
+                                perdidas=Count('pk', filter=Q(estado=Oportunidad.ESTADO_PERDIDA)),
+                                efectivos=Count('pk', filter=Q(contacto_efectivo_at__isnull=False)),
+                                en_curso=Count('pk', filter=Q(estado__in=Oportunidad.ESTADOS_ACTIVOS)))
+        gestion = gestion_por('lote', lote.created_at, tz.now()).get(lote.pk, {}) if resumen['leads'] else {}
+        return render(request, 'crm/importacion_detalle.html', {'lote': lote, 'resumen': resumen, 'gestion': gestion})
 
 
 class ImportacionPlantillaView(LoginRequiredMixin, View):
@@ -989,12 +1045,17 @@ class EmbudoEditarView(PermisoRequeridoMixin, View):
 
     def _render(self, request, embudo, form):
         ctx = {'embudo': embudo, 'form': form}
+        from .forms import ResultadoGestionForm
+        from .models import ResultadoGestion
         if embudo:
             ctx.update({
                 'etapas': embudo.etapas.annotate(n=Count('oportunidades')).order_by('orden', 'pk'),
                 'tipificaciones': Tipificacion.objects.filter(Q(embudo=embudo) | Q(embudo__isnull=True))
                 .order_by('resultado', 'orden', 'categoria'),
                 'etapa_form': EtapaForm(), 'tip_form': TipificacionForm(),
+                'resultados': ResultadoGestion.objects.filter(Q(embudo=embudo) | Q(embudo__isnull=True))
+                .select_related('mover_a'),
+                'res_form': ResultadoGestionForm(embudo=embudo, initial={'activo': True}),
                 'reglas': embudo.reglas_asignacion.prefetch_related('agentes', 'pautas'),
                 'conectados': presencia.conectados(embudo.agentes.values_list('pk', flat=True)),
                 'campos_requeribles': [(c, label) for c, label, *_ in CAMPOS_FIJOS_REQUERIBLES] + [
@@ -1092,6 +1153,30 @@ class TipificacionAccionView(PermisoRequeridoMixin, View):
         return redirect(reverse('crm:embudo_editar', args=[embudo.pk]) + '#tipificaciones')
 
 
+class ResultadoGestionView(PermisoRequeridoMixin, View):
+    permiso = 'embudos'
+
+    def post(self, request, embudo_pk, pk=None):
+        from .forms import ResultadoGestionForm
+        from .models import ResultadoGestion
+        embudo = get_object_or_404(Embudo, pk=embudo_pk)
+        res = get_object_or_404(ResultadoGestion, pk=pk) if pk else None
+        if res and request.POST.get('accion') == 'toggle':
+            res.activo = not res.activo
+            res.save(update_fields=['activo'])
+        else:
+            form = ResultadoGestionForm(request.POST, instance=res, embudo=embudo)
+            if form.is_valid():
+                r = form.save(commit=False)
+                if res is None and request.POST.get('solo_este'):
+                    r.embudo = embudo
+                r.save()
+                messages.success(request, f'Resultado "{r}" guardado.')
+            else:
+                messages.error(request, f'Revisá el resultado: {form.errors.as_text()}')
+        return redirect(reverse('crm:embudo_editar', args=[embudo.pk]) + '#resultados')
+
+
 class EtiquetaView(LoginRequiredMixin, View):
     def get(self, request):
         return render(request, 'crm/config/etiquetas.html', {
@@ -1140,6 +1225,11 @@ class SupervisionView(PermisoRequeridoMixin, View):
                                                 inicio_at__gte=ahora - timedelta(hours=3)).values_list('agente_id', flat=True))
         llamadas_hoy = dict(Llamada.objects.filter(inicio_at__gte=hoy).values_list('agente').annotate(n=Count('pk'))
                             .values_list('agente', 'n'))
+        from apps.telefonia.services import q_sin_calificar
+        sin_calificar = dict(Llamada.objects.filter(q_sin_calificar(), inicio_at__gte=ahora - timedelta(days=30))
+                             .values_list('agente').annotate(n=Count('pk')).values_list('agente', 'n'))
+        prioritarias = dict(ops.filter(prioritaria=True, estado=Oportunidad.ESTADO_ABIERTA, agente__isnull=False)
+                            .values_list('agente').annotate(n=Count('pk')).values_list('agente', 'n'))
         wa = dict(Conversacion.objects.filter(archivada=False, no_leidos__gt=0).values_list('agente')
                   .annotate(n=Count('pk')).values_list('agente', 'n'))
         from django.db.models import Max
@@ -1158,7 +1248,8 @@ class SupervisionView(PermisoRequeridoMixin, View):
             a.tareas_vencidas = vencidas.get(a.pk, 0)
             filas.append({'u': a, 'en_llamada': a.pk in en_llamada, 'llamadas_hoy': llamadas_hoy.get(a.pk, 0),
                           'wa': wa.get(a.pk, 0), 'online': a.pk in online, 'desde': sesion_desde.get(a.pk),
-                          'ausente_desde': ausentes.get(a.pk),
+                          'ausente_desde': ausentes.get(a.pk), 'sin_calificar': sin_calificar.get(a.pk, 0),
+                          'prioritarias': prioritarias.get(a.pk, 0),
                           'ultima_vez': ultima_vez.get(a.pk)})
         filas.sort(key=lambda f: (not f['online'], f['u'].display_name.lower()))
         return render(request, 'crm/supervision.html', {
@@ -1171,7 +1262,7 @@ class SupervisionView(PermisoRequeridoMixin, View):
             'estancados': ops.filter(estado=Oportunidad.ESTADO_ABIERTA, etapa__tipo=Etapa.TIPO_NORMAL,
                                      etapa_desde__lt=ahora - timedelta(days=(embudo.dias_estancado_alerta or 7)
                                                                         if embudo else 7)).count(),
-            'agentes_todos': agentes_activos(),
+            'agentes_todos': agentes_activos(), 'total_sin_calificar': sum(sin_calificar.values()),
         })
 
     def post(self, request):

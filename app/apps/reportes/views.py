@@ -174,6 +174,7 @@ class DashboardView(PermisoRequeridoMixin, View):
             'unicos': analisis.leads_unicos(embudo, ini, fin), 'conversion': analisis.embudo_conversion(embudo, ini, fin),
             'pipeline': analisis.matriz_pipeline(embudo), 'actividad': analisis.actividad_vendedoras(ini, fin),
             'columnas_actividad': analisis.COLUMNAS_ACTIVIDAD,
+            'resultados': analisis.resultados_gestion(ini, fin, embudo),
             'embudo': embudo, 'embudos': embudos, 'p': p, 'desde': desde, 'hasta': hasta, 'm': m,
             'etapas': etapas, 'serie': serie, 'tip_venta': tip_venta, 'tip_no': tip_no,
             'categorias': sorted(categorias.items(), key=lambda x: -x[1]), 'postergados': postergados,
@@ -273,7 +274,10 @@ class PulsoView(LoginRequiredMixin, View):
         data = {'notif': contar_no_leidas(user), 'tareas': contar_tareas_hoy(user),
                 'wa': contar_no_leidos_usuario(user), 'llamada': None}
         if usuario_tiene_interno(user):
-            data['llamada'] = estado_llamada_json(llamada_activa(user))
+            from apps.telefonia.services import pendiente_de_calificar, pendiente_json
+            activa = llamada_activa(user)
+            data['llamada'] = estado_llamada_json(activa)
+            data['calificar'] = None if activa else pendiente_json(pendiente_de_calificar(user))
         return JsonResponse(data)
 
 

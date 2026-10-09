@@ -159,6 +159,7 @@
       if (prevNotif !== null && d.notif > prevNotif) sonido();
       prevNotif = d.notif;
       pintarLlamada(d.llamada);
+      pedirResultado(d.calificar);
     }).catch(() => {}).finally(() => {
       clearTimeout(pulsoTimer);
       pulsoTimer = setTimeout(pulso, intervaloPulso());
@@ -179,6 +180,86 @@
       o.connect(g); g.connect(ctx.destination); o.frequency.value = 880; g.gain.value = 0.04;
       o.start(); o.stop(ctx.currentTime + 0.12);
     } catch (e) { /* sin audio */ }
+  }
+
+  /* ── Resultado de la gestión: obligatorio después de cada llamada atendida ── */
+  let resultadoPendiente = null;
+  function pedirResultado(p) {
+    const m = document.getElementById('modalResultado');
+    if (!m || !window.bootstrap) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(m);
+    if (!p) { if (resultadoPendiente) { resultadoPendiente = null; modal.hide(); } return; }
+    if (resultadoPendiente && resultadoPendiente.id === p.id) return;
+    resultadoPendiente = p;
+    m.querySelector('.quien').textContent = `${p.nombre} · ${p.cuando}`;
+    const ver = m.querySelector('.ver-ficha');
+    ver.href = p.url || '#'; ver.style.display = p.url && location.pathname !== p.url ? '' : 'none';
+    const box = m.querySelector('.opciones');
+    box.innerHTML = '';
+    p.resultados.forEach(r => {
+      const l = document.createElement('label');
+      l.className = 'd-flex gap-2 align-items-center border rounded px-2 py-1';
+      l.innerHTML = `<input type="radio" name="resultado" class="form-check-input mt-0" value="${r.id}"> <span></span>`;
+      l.querySelector('span').textContent = r.nombre;
+      l.querySelector('input').dataset.fecha = r.pide_fecha ? '1' : '';
+      box.appendChild(l);
+    });
+    m.querySelector('[name=nota]').value = '';
+    m.querySelector('[name=fecha]').value = '';
+    m.querySelector('.fecha-wrap').style.display = 'none';
+    m.querySelector('.guardar').disabled = true;
+    modal.show();
+  }
+
+  function initResultado() {
+    const m = document.getElementById('modalResultado');
+    if (!m) return;
+    m.addEventListener('change', e => {
+      if (e.target.name !== 'resultado') return;
+      m.querySelector('.fecha-wrap').style.display = e.target.dataset.fecha ? '' : 'none';
+      m.querySelector('.guardar').disabled = false;
+    });
+    m.querySelector('.guardar').addEventListener('click', async ev => {
+      const r = m.querySelector('[name=resultado]:checked');
+      if (!r || !resultadoPendiente) return;
+      const fecha = m.querySelector('[name=fecha]').value;
+      if (r.dataset.fecha && !fecha) { toast('Indicá cuándo volver a llamar', 'error'); return; }
+      ev.target.disabled = true;
+      try {
+        const d = await api('/api/telephony/calificar/' + resultadoPendiente.id,
+          {data: {resultado: r.value, nota: m.querySelector('[name=nota]').value, volver_a_llamar: fecha}});
+        toast('Resultado guardado');
+        resultadoPendiente = null;
+        bootstrap.Modal.getOrCreateInstance(m).hide();
+        document.dispatchEvent(new CustomEvent('crm:llamada-calificada'));
+        if (d.siguiente) setTimeout(() => pedirResultado(d.siguiente), 400);
+      } catch (e) { ev.target.disabled = false; }
+    });
+  }
+
+  /* ── Adjunto de WhatsApp → campo de tipo archivo del contacto ── */
+  function initGuardarAdjunto() {
+    document.addEventListener('click', async e => {
+      const b = e.target.closest('.guardar-adjunto');
+      if (!b) return;
+      e.preventDefault();
+      const url = `/whatsapp/mensaje/${b.dataset.msg}/guardar-adjunto/`;
+      let d;
+      try { d = await api(url); } catch (err) { return; }
+      if (!d.campos.length) { toast('Primero creá un campo de tipo "Archivo" en Configuración → Campos personalizados', 'error'); return; }
+      let campo = d.campos[0];
+      if (d.campos.length > 1) {
+        const n = prompt('¿En qué campo lo guardo?\n' + d.campos.map((c, i) => `${i + 1}. ${c.nombre}`).join('\n'), '1');
+        if (n === null) return;
+        campo = d.campos[parseInt(n, 10) - 1];
+        if (!campo) { toast('Opción inválida', 'error'); return; }
+      } else if (!confirm(`¿Guardar el adjunto en «${campo.nombre}»?`)) return;
+      try {
+        const r = await api(url, {data: {campo: campo.slug}});
+        toast(r.mensaje);
+        b.innerHTML = '<i class="bi bi-check2"></i>';
+      } catch (err) { /* toast ya mostrado */ }
+    });
   }
 
   /* ── Widget de llamada (vive en base.html: sobrevive a la navegación) ── */
@@ -231,6 +312,7 @@
       w.querySelector('.est').textContent = 'Finalizada · ' + (f.estado_display || '') + (f.segundos ? ' · ' + hace(f.segundos) : '');
     }).catch(() => {});
     document.dispatchEvent(new CustomEvent('crm:llamada-fin', {detail: ll}));
+    clearTimeout(pulsoTimer); pulsoTimer = setTimeout(pulso, 1500);  // trae el pedido de resultado enseguida
     setTimeout(() => { if (!llamadaActual || !llamadaActual.viva) w.className = ''; }, 8000);
   }
 
@@ -327,6 +409,7 @@
     if (f.tipo === 'numero') return `<input type="number" step="any" ${n} ${cls}>`;
     if (f.tipo === 'email') return `<input type="email" ${n} ${cls}>`;
     if (f.tipo === 'texto_largo') return `<textarea rows="2" ${n} ${cls}></textarea>`;
+    if (f.tipo === 'archivo') return `<input type="file" ${n} ${cls}>`;
     return `<input type="text" ${n} ${cls}>`;
   }
 
@@ -419,7 +502,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    initSidebar(); initBuscador(); initNotificaciones(); initWidget(); initAcciones();
+    initSidebar(); initBuscador(); initNotificaciones(); initWidget(); initResultado(); initGuardarAdjunto(); initAcciones();
     if (document.body.dataset.auth === '1') pulso();
   });
 

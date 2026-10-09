@@ -33,10 +33,11 @@
       <button type="button" class="btn btn-outline-secondary rango" data-r="mes">Mes</button>
       <button type="button" class="btn btn-outline-secondary rango" data-r="30">30 días</button>
     </div>
+    <label class="btn btn-sm btn-outline-danger {% if filtros.prioritaria %}active{% endif %}" title="Solo las marcadas como prioridad (ej. reingresos)"><input type="checkbox" name="prioritaria" value="1" class="d-none" onchange="this.form.submit()" {% if filtros.prioritaria %}checked{% endif %}>🔥 Prioridad</label>
     <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filtrar</button>
     <button type="button" class="btn btn-link btn-sm" data-bs-toggle="collapse" data-bs-target="#masFiltros">Más filtros</button>
   </div>
-  <div class="collapse {% if sel.pauta or sel.origen or sel.tipificacion or sel.lote or sel.etiqueta or filtros.intentos_min or filtros.intentos_max or filtros.ingresos_min or filtros.puntaje_min or filtros.sin_actividad %}show{% endif %}" id="masFiltros">
+  <div class="collapse {% if sel.pauta or sel.origen or sel.tipificacion or sel.lote or sel.etiqueta or filtros.intentos_min or filtros.intentos_max or filtros.ingresos_min or filtros.puntaje_min or filtros.sin_actividad or filtros.sin_calificar or filtros.vencida %}show{% endif %}" id="masFiltros">
     <div class="toolbar mt-2">
       {% include "crm/_multi.html" with nombre="pauta" titulo="Pauta" opciones=opciones.pauta sel=sel.pauta %}
       {% include "crm/_multi.html" with nombre="origen" titulo="Canal" opciones=opciones.origen sel=sel.origen %}
@@ -53,6 +54,8 @@
         <option value="7" {% if filtros.sin_actividad == '7' %}selected{% endif %}>Sin actividad +7 días</option>
         <option value="30" {% if filtros.sin_actividad == '30' %}selected{% endif %}>Sin actividad +30 días</option>
       </select>
+      <label class="small d-flex gap-1 align-items-center"><input type="checkbox" name="sin_calificar" value="1" class="form-check-input mt-0" {% if filtros.sin_calificar %}checked{% endif %}> Con llamadas sin calificar</label>
+      <label class="small d-flex gap-1 align-items-center"><input type="checkbox" name="vencida" value="1" class="form-check-input mt-0" {% if filtros.vencida %}checked{% endif %}> Ficha vencida</label>
       {% for c in campos_filtro %}{% with clave='cp_'|add:c.slug %}
       {% if c.tipo == 'lista' %}<select name="{{ clave }}" class="form-select form-select-sm"><option value="">{{ c.nombre }}</option>{% for o in c.opciones %}<option value="{{ o }}" {% if filtros|get_item:clave == o %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
       {% elif c.tipo == 'sino' %}<select name="{{ clave }}" class="form-select form-select-sm"><option value="">{{ c.nombre }}</option><option value="true" {% if filtros|get_item:clave == 'true' %}selected{% endif %}>{{ c.nombre }}: Sí</option><option value="false" {% if filtros|get_item:clave == 'false' %}selected{% endif %}>{{ c.nombre }}: No</option></select>
@@ -84,6 +87,8 @@
         <option value="cerrar">Cerrar / postergar (tipificar)</option>
         <option value="pausar">Pausar</option>
         <option value="reanudar">Reactivar</option>
+        <option value="tarea">Crear tarea (queda en Mi día)</option>
+        <option value="prioridad">Marcar como prioridad 🔥</option>
         <option value="etiqueta">Agregar etiqueta</option>
         {% if 'discador' in perms_crm %}<option value="campania">Cargar al discador</option>{% endif %}
         {% if 'difusiones' in perms_crm %}<option value="difusion">Enviar difusión (email / WhatsApp)…</option>{% endif %}
@@ -97,11 +102,15 @@
         {% regroup tipificaciones by get_resultado_display as grupos %}{% for g in grupos %}<optgroup label="{{ g.grouper }}">{% for t in g.list %}<option value="{{ t.pk }}" data-accion="{{ t.accion }}" data-nota="{{ t.requiere_nota|yesno:'1,0' }}">{{ t.categoria }}{% if t.categoria %}: {% endif %}{{ t.nombre }}</option>{% endfor %}</optgroup>{% endfor %}
       </select>
       <input type="datetime-local" name="fecha" class="form-control form-control-sm" id="fechaPostergar" style="display:none;max-width:210px" title="Fecha de recontacto">
-      <input name="motivo" class="form-control form-control-sm opc opc-pausar" style="display:none;max-width:220px" placeholder="Motivo de la pausa">
+      <input name="titulo" class="form-control form-control-sm opc opc-tarea" style="display:none;max-width:260px" placeholder="Tarea (ej. Llamar por campaña X)">
+      <select name="tipo_tarea" class="form-select form-select-sm opc opc-tarea" style="display:none;max-width:140px"><option value="llamada">Llamar</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="seguimiento">Seguimiento</option></select>
+      <input type="datetime-local" name="vence" class="form-control form-control-sm opc opc-tarea" style="display:none;max-width:210px" title="Vence (vacío = hoy 23 h)">
+      {% if user.ve_todo %}<select name="para" class="form-select form-select-sm opc opc-tarea" style="display:none;max-width:200px"><option value="">Para el vendedor de cada una</option><option value="yo">Para mí</option></select>{% endif %}
+      <input name="motivo" class="form-control form-control-sm opc opc-pausar opc-prioridad" style="display:none;max-width:220px" placeholder="Motivo">
       <input type="datetime-local" name="hasta" class="form-control form-control-sm opc opc-pausar" style="display:none;max-width:210px" title="Reactivar automáticamente el">
       <select name="destino_etiqueta" class="form-select form-select-sm opc opc-etiqueta" style="display:none;max-width:200px">{% for e in etiquetas %}<option value="{{ e.pk }}">{{ e }}</option>{% empty %}<option value="">No hay etiquetas</option>{% endfor %}</select>
       <select name="campania" class="form-select form-select-sm opc opc-campania" style="display:none;max-width:220px">{% for c in campanias %}<option value="{{ c.pk }}">{{ c.nombre }}</option>{% empty %}<option value="">No hay campañas</option>{% endfor %}</select>
-      <input name="nota" class="form-control form-control-sm opc opc-reasignar opc-mover opc-cerrar" style="display:none;max-width:260px" placeholder="Nota (opcional)" id="notaMasiva">
+      <input name="nota" class="form-control form-control-sm opc opc-reasignar opc-mover opc-cerrar opc-tarea" style="display:none;max-width:260px" placeholder="Nota (opcional)" id="notaMasiva">
       <button class="btn btn-primary btn-sm">Aplicar</button>
     </div>
   </div></div>
@@ -124,6 +133,7 @@
       <td><a href="{% url 'crm:oportunidad_detalle' o.pk %}" class="fw-semibold text-decoration-none">{{ o.contacto.nombre }}</a>
         {% if o.tiene_vencidas %}<i class="bi bi-alarm text-danger" title="Tareas vencidas"></i>{% endif %}
         {% if o.contacto.no_contactar %}<i class="bi bi-slash-circle text-danger" title="No contactar"></i>{% endif %}
+        {% if o.prioritaria %}<span class="chip danger" title="{{ o.prioridad_motivo|default:'Prioridad' }}">🔥</span>{% endif %}
         {% if o.ingresos > 1 %}<span class="chip warn" title="Ingresó {{ o.ingresos }} veces">×{{ o.ingresos }}</span>{% endif %}</td>
       <td class="text-nowrap">{{ o.contacto.telefono|telefono }}</td>
       {% for cp, val in o.campos_vista %}<td class="small">{{ val }}</td>{% endfor %}

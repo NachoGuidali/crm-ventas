@@ -25,6 +25,8 @@ ACCIONES = {
     'pausar': 'Pausar',
     'reanudar': 'Reactivar',
     'etiqueta': 'Agregar etiqueta',
+    'tarea': 'Crear tarea',
+    'prioridad': 'Marcar como prioridad',
     'campania': 'Cargar al discador',
     'eliminar': 'Eliminar',
 }
@@ -54,6 +56,8 @@ def validar(user, accion, datos):
             raise crm.ErrorNegocio(f'La tipificación "{tip}" requiere una nota.')
     if accion == 'etiqueta' and not datos.get('destino_etiqueta'):
         raise crm.ErrorNegocio('Elegí la etiqueta.')
+    if accion == 'tarea' and not (datos.get('titulo') or '').strip():
+        raise crm.ErrorNegocio('Escribí el título de la tarea (ej. "Llamar por la campaña Día de la Madre").')
     if accion == 'campania' and not datos.get('campania'):
         raise crm.ErrorNegocio('Elegí la campaña.')
 
@@ -139,6 +143,24 @@ def ejecutar(user, accion, ids, datos):
                                                  texto=f'Etiqueta agregada: {etiqueta}')
                                        for cid, op in nuevos.items()], batch_size=500)
         hechos = len(ops)
+    elif accion == 'tarea':
+        from django.utils import timezone
+        from .models import Tarea
+        vence = _fecha_local(datos.get('vence')) or timezone.localtime().replace(hour=23, minute=0, second=0, microsecond=0)
+        tipo = datos.get('tipo_tarea') if datos.get('tipo_tarea') in dict(Tarea.TIPO_CHOICES) else Tarea.TIPO_LLAMADA
+        para_mi = datos.get('para') == 'yo'
+        for op in ops:
+            if not op.activa:
+                registrar_error(op, 'está cerrada')
+                continue
+            crm.crear_tarea(user, user if para_mi else (op.agente or user), datos['titulo'].strip()[:200], vence,
+                            oportunidad=op, tipo=tipo, descripcion=datos.get('nota', ''))
+            hechos += 1
+    elif accion == 'prioridad':
+        for op in ops:
+            if op.activa and crm.marcar_prioridad(op, datos.get('motivo') or f'Marcada por {user.display_name}',
+                                                  usuario=user):
+                hechos += 1
     elif accion == 'campania':
         from apps.telefonia.models import CampaniaDiscado
         from apps.telefonia.services import cargar_en_campania

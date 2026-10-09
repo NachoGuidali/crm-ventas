@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import os
 import uuid
 
@@ -111,6 +112,47 @@ def _conv_visible(request, pk):
     if conv is None:
         raise Http404
     return conv
+
+
+class GuardarAdjuntoView(LoginRequiredMixin, View):
+    """Adjunto recibido por WhatsApp → campo personalizado de tipo archivo del contacto (ej. "Recibo de sueldo")."""
+
+    def _mensaje(self, request, pk):
+        msg = get_object_or_404(Mensaje.objects.select_related('conversacion__contacto'), pk=pk)
+        _conv_visible(request, msg.conversacion_id)
+        return msg
+
+    def get(self, request, pk):
+        from apps.crm import archivos
+        from apps.crm.services import oportunidad_activa_de
+        msg = self._mensaje(request, pk)
+        contacto = msg.conversacion.contacto
+        op = oportunidad_activa_de(contacto) if contacto else None
+        return ok(campos=[{'slug': c.slug, 'nombre': c.nombre}
+                          for c in archivos.campos_archivo(op.embudo if op else None)])
+
+    def post(self, request, pk):
+        from apps.crm import archivos
+        from apps.crm.models import CampoPersonalizado
+        from apps.crm.services import oportunidad_activa_de
+        msg = self._mensaje(request, pk)
+        contacto = msg.conversacion.contacto
+        if contacto is None:
+            return error('El chat no está vinculado a un contacto.')
+        data = json_body(request)
+        campo = CampoPersonalizado.objects.filter(slug=data.get('campo') or '', tipo=CampoPersonalizado.TIPO_ARCHIVO,
+                                                  activo=True).first()
+        if campo is None:
+            return error('Elegí el campo.')
+        try:
+            contenido = archivos.leer_media_local(msg.media_url)
+            ext = mimetypes.guess_extension(msg.media_mime or '') or ''
+            nombre = msg.media_filename or f'{campo.slug}_{timezone.localtime(msg.timestamp):%Y%m%d_%H%M}{ext}'
+            archivos.adjuntar(contacto, campo, contenido, nombre, request.user, oportunidad_activa_de(contacto),
+                              origen='desde WhatsApp')
+        except archivos.ErrorArchivo as e:
+            return error(str(e))
+        return ok(mensaje=f'Guardado en «{campo.nombre}»')
 
 
 class InboxView(LoginRequiredMixin, View):
