@@ -811,15 +811,15 @@ def _clave_softphone(user_id):
 
 
 def usa_softphone(user):
-    """El agente tiene el teléfono del CRM: integración y teléfono activos y credenciales SIP cargadas."""
+    """El agente ve el teléfono del CRM: integración y teléfono activos y un interno asignado. Si falta algún dato
+    (dominio, credenciales SIP) o está en modo demostración, la barra lo dice en vez de desaparecer."""
     if not getattr(user, 'is_authenticated', False):
         return False
     val = cache.get(_clave_softphone(user.pk))
     if val is None:
         config = ConfigAnura.get()
-        interno = InternoAnura.objects.filter(usuario=user, activo=True).first()
-        val = bool(config.activo and config.softphone_activo and config.sip_dominio and interno
-                   and interno.tiene_softphone)
+        val = bool(config.activo and config.softphone_activo
+                   and InternoAnura.objects.filter(usuario=user, activo=True).exists())
         cache.set(_clave_softphone(user.pk), val, 300)
     return val
 
@@ -829,11 +829,19 @@ def invalidar_softphone(user_ids):
 
 
 def credenciales_softphone(user):
-    """Datos de registro de la terminal CRM del agente (solo los suyos)."""
+    """Datos de registro de la terminal CRM del agente (solo los suyos). Si no se puede registrar, {'falta': motivo}."""
     config = ConfigAnura.get()
     interno = InternoAnura.objects.filter(usuario=user, activo=True).first()
-    if not (config.activo and config.softphone_activo and config.sip_dominio and interno and interno.tiene_softphone):
+    if not (config.activo and config.softphone_activo) or interno is None:
         return None
+    if config.modo_demo:
+        return {'demo': True, 'interno': interno.interno,
+                'falta': 'Modo demostración: el teléfono no se conecta a Anura (las llamadas se simulan).'}
+    if not config.sip_dominio.strip():
+        return {'interno': interno.interno, 'falta': 'Falta el dominio de la central (Configuración → Telefonía Anura).'}
+    if not interno.tiene_softphone:
+        return {'interno': interno.interno,
+                'falta': f'Falta el usuario y la contraseña SIP del interno {interno.interno} (Telefonía Anura → Internos).'}
     dominio = config.sip_dominio.strip()
     return {
         'ws': config.softphone_ws.strip(),

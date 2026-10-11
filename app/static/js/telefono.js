@@ -243,6 +243,17 @@
       aviso(e.message);
       return;
     }
+    if (cred.demo) {  // sin Anura: las llamadas las simula el CRM y se cortan desde el aviso de llamada
+      estado('listo', 'Teléfono en modo demostración · interno ' + cred.interno);
+      aviso('Las llamadas se simulan; para hablar de verdad, desactivá el modo demostración.');
+      window.CRMTelefono.demo = true;
+      return;
+    }
+    if (cred.falta) {
+      estado('error', 'Teléfono sin configurar · interno ' + cred.interno);
+      aviso(cred.falta);
+      return;
+    }
     ua = new JsSIP.UA({
       sockets: [new JsSIP.WebSocketInterface(cred.ws)],
       uri: cred.uri,

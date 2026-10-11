@@ -326,7 +326,7 @@ class LlamadaSinAvisoTests(AnuraBase):
 class SoftphoneTests(AnuraBase):
     def setUp(self):
         super().setUp()
-        ConfigAnura.objects.filter(pk=1).update(softphone_activo=True, sip_dominio='demo.grancentral.com.ar',
+        ConfigAnura.objects.filter(pk=1).update(softphone_activo=True, modo_demo=False, sip_dominio='demo.grancentral.com.ar',
                                                 sip_puerto=55090)
         interno = InternoAnura.objects.get(usuario=self.agente)
         interno.sip_usuario = 'crm201'
@@ -361,6 +361,17 @@ class SoftphoneTests(AnuraBase):
         # Descargas, API y navegadores sin el encabezado: sin marco
         self.assertNotContains(self.navegar('/telefonia/llamadas/?csv=1'), 'id="pantalla"')
         self.assertNotContains(self.client.get('/mi-dia/'), 'id="pantalla"')
+        # Sin credenciales SIP: el marco aparece igual y la barra dice qué falta
+        i = InternoAnura.objects.get(usuario=self.agente)
+        i.sip_usuario = ''
+        i.save()
+        from django.core.cache import cache
+        cache.clear()
+        self.assertContains(self.navegar('/mi-dia/'), 'id="pantalla"')
+        self.assertIn('usuario y la contraseña SIP', self.client.post('/api/telephony/softphone/').json()['falta'])
+        ConfigAnura.objects.filter(pk=1).update(modo_demo=True)
+        cache.clear()
+        self.assertTrue(self.client.post('/api/telephony/softphone/').json()['demo'])
         # Sin teléfono del CRM: sin marco
         ConfigAnura.objects.filter(pk=1).update(softphone_activo=False)
         from django.core.cache import cache
