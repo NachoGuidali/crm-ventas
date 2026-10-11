@@ -3,7 +3,7 @@
 {% block title %}Oportunidades{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1><i class="bi bi-list-check"></i> Oportunidades <span class="sub">{{ page.paginator.count }} resultados</span></h1>
+  <h1><i class="bi bi-list-check"></i> Oportunidades <span class="sub">{{ page.paginator.count|miles }} resultados</span></h1>
   <div class="toolbar">
     {% include "crm/_filtros_embudo.html" %}
     <a href="{% url 'crm:tablero' %}?{{ query }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-kanban"></i> Tablero</a>
@@ -76,7 +76,7 @@
   <div class="card mb-2" id="barraMasiva" style="display:none;position:sticky;top:-20px;z-index:20"><div class="card-body py-2">
     <div class="toolbar">
       <b class="small"><span id="nSel">0</span> seleccionadas</b>
-      {% if total_filtrado > page.object_list|length %}<a href="#" class="small" id="selTodos">Seleccionar las {{ total_filtrado }} que cumplen los filtros</a>{% endif %}
+      {% if total_filtrado > page.object_list|length %}<a href="#" class="small" id="selTodos">Seleccionar las {{ total_filtrado|miles }} que cumplen los filtros</a>{% endif %}
       <a href="#" class="small muted" id="selNinguna">Quitar selección</a>
     </div>
     <div class="toolbar mt-2">

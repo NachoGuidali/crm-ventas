@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load crm_extras %}
 {% block title %}Tablero · {{ embudo }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -53,7 +54,7 @@
     <div class="col {% if col.cierre %}cierre {{ col.etapa.tipo }}{% endif %}" style="--c:{{ col.etapa.color }}">
       <div class="col-head">
         <span class="t" title="{{ col.etapa.descripcion }}">{{ col.etapa.nombre }}</span>
-        <span class="n" data-count="{{ col.etapa.pk }}">{{ col.total }}</span>
+        <span class="n" data-count="{{ col.etapa.pk }}">{{ col.total|miles }}</span>
       </div>
       <div class="col-body" data-etapa="{{ col.etapa.pk }}" data-tipo="{{ col.etapa.tipo }}">
         {% if col.cierre %}
@@ -80,7 +81,7 @@
 
   function ajustarConteo(etapa, delta) {
     const n = board.querySelector(`[data-count="${etapa}"]`);
-    if (n) n.textContent = Math.max(0, parseInt(n.textContent || '0') + delta);
+    if (n) n.textContent = Math.max(0, parseInt((n.textContent || '0').replace(/\D/g, '') || '0') + delta).toLocaleString('es-AR');
   }
 
   board.addEventListener('dragstart', e => {

@@ -3,7 +3,7 @@
 {% block title %}Contactos{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1><i class="bi bi-person-lines-fill"></i> Contactos <span class="sub">{{ page.paginator.count }}</span></h1>
+  <h1><i class="bi bi-person-lines-fill"></i> Contactos <span class="sub">{{ page.paginator.count|miles }}</span></h1>
   <a href="{% url 'crm:oportunidad_nueva' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Nuevo prospecto</a>
 </div>
 <form class="toolbar mb-3" method="get">

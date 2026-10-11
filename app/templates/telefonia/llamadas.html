@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% load crm_extras %}
 {% block title %}Llamadas{% endblock %}
 {% block content %}
-<div class="page-head"><h1><i class="bi bi-telephone"></i> Llamadas <span class="sub">{{ page.paginator.count }}</span></h1></div>
+<div class="page-head"><h1><i class="bi bi-telephone"></i> Llamadas <span class="sub">{{ page.paginator.count|miles }}</span></h1></div>
 <form class="toolbar mb-3" method="get">
   <input type="search" name="q" value="{{ filtros.q }}" class="form-control form-control-sm" placeholder="Nombre, número o ID de grabación">
   {% if user.ve_todo %}<select name="agente" class="form-select form-select-sm"><option value="">Agente</option>{% for a in agentes %}<option value="{{ a.pk }}" {% if filtros.agente == a.pk|stringformat:'s' %}selected{% endif %}>{{ a.display_name }}</option>{% endfor %}</select>{% endif %}

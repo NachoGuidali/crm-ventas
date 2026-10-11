@@ -378,3 +378,11 @@ class GestionPorCampaniaTests(Base):
         admin = User.objects.create_superuser('jefa', password='x', email='j@x.com')
         self.client.force_login(admin)
         self.assertContains(self.client.get('/pautas/'), 'Gestión por pauta')
+
+
+class FormatoNumerosTests(TestCase):
+    def test_ids_sin_separador_de_miles(self):
+        """Los IDs van en botones, formularios y JS: '10.000' rompía llamar y las acciones masivas."""
+        from django.template import Context, Template
+        html = Template('{% load crm_extras %}<b data-op="{{ n }}">{{ n|miles }}</b>').render(Context({'n': 10000}))
+        self.assertEqual(html, '<b data-op="10000">10.000</b>')

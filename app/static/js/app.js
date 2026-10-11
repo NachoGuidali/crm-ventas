@@ -266,6 +266,8 @@
   function pintarLlamada(ll) {
     const w = document.getElementById('callWidget');
     if (!w) return;
+    const telMarco = telefono();
+    if (telMarco && telMarco.reflejar) telMarco.reflejar(ll);
     if (!ll) {
       if (llamadaActual && llamadaActual.viva) { // terminó
         llamadaActual.viva = false;
@@ -512,7 +514,8 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    initSidebar(); initBuscador(); initNotificaciones(); initWidget(); initResultado(); initGuardarAdjunto(); initAcciones();
+    initSidebar(); initBuscador(); initNotificaciones(); if (telefono()) document.body.classList.add('en-marco');  // la barra del teléfono muestra la llamada
+    initWidget(); initResultado(); initGuardarAdjunto(); initAcciones();
     if (document.body.dataset.auth === '1') pulso();
   });
 

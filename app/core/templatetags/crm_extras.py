@@ -65,6 +65,15 @@ def duracion_td(td):
 
 
 @register.filter
+def miles(valor):
+    """10000 → '10.000' (solo para mostrar; nunca en IDs ni en valores de formularios)."""
+    try:
+        return f'{int(valor):,}'.replace(',', '.')
+    except (TypeError, ValueError):
+        return valor
+
+
+@register.filter
 def pesos(valor, decimales=None):
     """1234.5 → '$ 1.234,50' (formato argentino). Sin decimales si el monto es grande."""
     if valor in (None, ''):

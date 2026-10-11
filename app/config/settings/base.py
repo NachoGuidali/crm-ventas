@@ -116,7 +116,9 @@ LANGUAGE_CODE = 'es-ar'
 TIME_ZONE = 'America/Argentina/Buenos_Aires'
 USE_I18N = True
 USE_TZ = True
-USE_THOUSAND_SEPARATOR = True
+# Sin separador automático: los IDs van en botones, formularios y JS ("10.000" rompía llamar, seleccionar, etc.).
+# Para mostrar cantidades grandes: filtros |miles (crm_extras) o |intcomma.
+USE_THOUSAND_SEPARATOR = False
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'

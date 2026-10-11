@@ -152,7 +152,7 @@
     s.on('failed', terminar);
     s.on('getusermediafailed', () => {
       aviso('El navegador no dejó usar el micrófono: habilitalo (ícono del candado en la barra de direcciones).');
-      $('#tel .microfono').hidden = false;
+      const m = $('#tel .microfono'); if (m) m.hidden = false;
     });
     s.on('hold', () => { $('#tel .espera').classList.add('active'); });
     s.on('unhold', () => { $('#tel .espera').classList.remove('active'); });
@@ -200,16 +200,53 @@
   });
 
   function cortar() {
+    if (demoLlamada) {  // modo demostración: corta la llamada simulada del CRM
+      fetch('/api/telephony/hangup/' + demoLlamada.id, {method: 'PUT', credentials: 'same-origin',
+                                                        headers: {'X-CSRFToken': csrf()}})
+        .finally(avisarPantalla);
+      return true;
+    }
     if (!sesion) return false;
     try { sesion.terminate(); } catch (e) { terminar(); }
     return true;
+  }
+
+  /* ── La pantalla informa la llamada del CRM (nombre y ficha); en modo demostración la barra la muestra ── */
+  let demoLlamada = null;
+  function reflejar(ll) {
+    if (sesion) {  // teléfono real: completar quién es
+      if (ll && ll.viva && ll.nombre) pintarQuien({nombre: ll.nombre, numero: ll.numero, url: ll.url});
+      return;
+    }
+    if (!window.CRMTelefono.demo) return;
+    if (ll && ll.viva) {
+      const nueva = !demoLlamada || demoLlamada.id !== ll.id;
+      demoLlamada = ll;
+      mostrarLlamada('en-llamada', {nombre: ll.nombre, numero: ll.numero, url: ll.url});
+      ['.silenciar', '.espera', '.abrir-teclado'].forEach(x => { $('#tel ' + x).hidden = true; });
+      if (nueva || ll.atendida) { inicio = Date.now() - (ll.segundos || 0) * 1000; }
+      if (nueva) arrancarRelojDesde(inicio);
+    } else if (demoLlamada) {
+      demoLlamada = null;
+      clearInterval(reloj);
+      mostrarLlamada(null);
+    }
+  }
+  function arrancarRelojDesde(desde) {
+    clearInterval(reloj);
+    const tick = () => {
+      const s = Math.max(0, Math.floor((Date.now() - desde) / 1000));
+      $('#tel .reloj').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    };
+    tick(); reloj = setInterval(tick, 1000);
   }
 
   /* ── API para las pantallas del CRM (iframe) ── */
   window.CRMTelefono = {
     esperarSaliente() { salienteHasta = Date.now() + 45000; },
     cortar,
-    enLlamada() { return !!sesion; },
+    reflejar,
+    enLlamada() { return !!(sesion || demoLlamada); },
     listo() { return !!(ua && ua.isRegistered()); },
   };
 
@@ -224,7 +261,7 @@
   async function revisarMicrofono() {
     try {
       const p = await navigator.permissions.query({name: 'microphone'});
-      const pintar = () => { $('#tel .microfono').hidden = p.state === 'granted'; };
+      const pintar = () => { const m = $('#tel .microfono'); if (m) m.hidden = p.state === 'granted'; };
       pintar(); p.onchange = pintar;
     } catch (e) { /* Firefox viejo: se pide al atender */ }
   }
@@ -247,6 +284,7 @@
       estado('listo', 'Teléfono en modo demostración · interno ' + cred.interno);
       aviso('Las llamadas se simulan; para hablar de verdad, desactivá el modo demostración.');
       window.CRMTelefono.demo = true;
+      $('#tel .microfono').remove();  // en demo no se usa el micrófono
       return;
     }
     if (cred.falta) {

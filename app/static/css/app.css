@@ -220,3 +220,6 @@ code.copiable { cursor: pointer; background: var(--bg3); padding: 3px 7px; borde
 .grabando .rec-send { margin-left: auto; }
 @keyframes recp { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .grabando .rec-dot { animation: none; } }
+
+/* Dentro del marco del teléfono, la llamada en curso se ve en la barra de arriba */
+body.en-marco #callWidget.show:not(.fin) { display: none !important; }
