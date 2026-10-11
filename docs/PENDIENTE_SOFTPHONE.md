@@ -1,7 +1,21 @@
 # Pendiente: softphone dentro del CRM (JsSIP)
 
-Estado: **en espera de datos técnicos de Anura**. Nada implementado todavía.
-Última actualización: 02/10/2026.
+Estado: **Anura respondió todo (11/10/2026): es viable.** Falta crear la terminal de prueba y arrancar el piloto.
+Última actualización: 11/10/2026.
+
+## Respuesta de Anura a las 7 preguntas (11/10/2026)
+
+| # | Pregunta | Respuesta |
+|---|---|---|
+| 1 | Servidor WebSocket y dominio | WebSocket **`wss://sipwss.anura.dev`** · dominio de la central **`agrupacionsanatorial.grancentral.com.ar`**, puerto **55090**. Cada terminal se registra con su **usuario y contraseña SIP** |
+| 2 | ¿SIP sobre WebSocket? | **Sí** (dan el WSS para eso) |
+| 3 | STUN/TURN y códecs | **No hace falta STUN/TURN.** Códecs: **G711A, G711U o G722** |
+| 4 | Segunda terminal y principal | La crea el admin por interno: https://kb.anura.com.ar/es/articles/2170210-como-crear-una-terminal-para-usar-en-un-softphone-de-forma-manual · en la misma sección se marca la **terminal principal** |
+| 5 | Variables custom llamando directo por WebSocket | **No.** Recomiendan **seguir con Click2Dial para salientes** (conviven el botón y el softphone) → confirma el diseño |
+| 6 | Restringir destinos | **Por interno** (no por terminal): sección *Límites* (celular, internacional, interno…): https://kb.anura.com.ar/es/articles/2411033-como-limitar-o-restringir-las-llamadas-salientes |
+| 7 | Eventos y grabación desde la terminal WebSocket | **Sí, igual:** los eventos se disparan por cuenta de interno, no por terminal; graban si está habilitado |
+
+Pendiente de confirmar: el dominio `agrupacionsanatorial…` ¿es la central de Roisa o la del interno de prueba 126?
 
 ## Por qué
 
