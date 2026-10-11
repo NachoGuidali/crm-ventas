@@ -1,6 +1,27 @@
 # Pendiente: softphone dentro del CRM (JsSIP)
 
-Estado: **Anura respondió todo (11/10/2026): es viable.** Falta crear la terminal de prueba y arrancar el piloto.
+Estado: **implementado (11/10/2026), falta probar con una terminal real.** Probado en navegador: el marco fijo
+navega sin recargar el teléfono y la terminal se conecta a `wss://sipwss.anura.dev` y registra (con credenciales falsas
+Anura responde "autenticación incorrecta", o sea que el camino funciona).
+
+### Cómo quedó
+- **Activar:** Configuración → Telefonía Anura → "Teléfono dentro del CRM" + dominio y puerto de la central.
+- **Por agente:** Internos → usuario y contraseña SIP de la terminal "CRM" (contraseña cifrada en la base, se entrega
+  solo al agente logueado por `POST /api/telephony/softphone/`, nunca va en el HTML).
+- **Marco fijo** (`core/marco.py` + `telefonia/marco.html`): si el agente tiene teléfono, al abrir cualquier pantalla
+  (encabezado `Sec-Fetch-Dest: document`) se sirve el marco con la barra del teléfono arriba y la pantalla en un iframe.
+  La URL y el título de la pestaña siguen al iframe. `?sin_marco=1` lo desactiva para una carga.
+- **Teléfono** (`static/js/telefono.js`, JsSIP 3.13.8 empaquetado en `static/vendor/`): atiende solo la pata del agente
+  de las llamadas que dispara el CRM (Llamar / discador: aviso de la pantalla, encabezado de auto-answer de Anura o
+  saliente viva en el CRM); las entrantes suenan con nombre del cliente y botón "Ficha"; cortar, silenciar, espera,
+  teclado; aviso antes de cerrar con llamada; una sola pestaña registra (Web Locks).
+- El aviso de llamada de las pantallas usa el teléfono para cortar y ya no muestra "Ir a Anura".
+
+### Para probar (interno 126)
+1. En Anura: crear una terminal nueva en el interno 126, marcarla **principal**, anotar usuario y contraseña SIP.
+2. En el CRM: activar el teléfono, cargar dominio/puerto y las credenciales en el interno.
+3. Probar: registro (barra verde), Llamar desde una ficha (atiende sola), cortar desde el CRM, entrante, navegar con
+   la llamada en curso, eventos y grabación.
 Última actualización: 11/10/2026.
 
 ## Respuesta de Anura a las 7 preguntas (11/10/2026)

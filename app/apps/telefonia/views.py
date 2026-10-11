@@ -80,6 +80,33 @@ class DialView(LoginRequiredMixin, View):
         return ok(llamada=services.estado_llamada_json(llamada), callId=llamada.call_id or llamada.anura_uuid)
 
 
+class SoftphoneView(LoginRequiredMixin, View):
+    """Credenciales de la terminal CRM del agente logueado (solo las suyas, nunca escritas en el HTML)."""
+
+    def post(self, request):
+        datos = services.credenciales_softphone(request.user)
+        if datos is None:
+            return error('No tenés el teléfono del CRM configurado.', 404)
+        resp = ok(**datos)
+        resp['Cache-Control'] = 'no-store'
+        return resp
+
+
+class QuienLlamaView(LoginRequiredMixin, View):
+    def get(self, request):
+        return ok(**services.quien_llama(request.user, request.GET.get('numero', '')))
+
+
+class MarcoView(LoginRequiredMixin, View):
+    """Marco fijo: el teléfono queda arriba y las pantallas del CRM cargan adentro sin cortar la llamada."""
+
+    def get(self, request):
+        destino = request.GET.get('ir') or '/'
+        if not destino.startswith('/') or destino.startswith('//'):
+            destino = '/'
+        return render(request, 'telefonia/marco.html', {'destino': destino})
+
+
 class CalificarView(LoginRequiredMixin, View):
     """POST /api/telephony/calificar/<id> — resultado de la gestión al terminar la llamada."""
 
@@ -153,7 +180,8 @@ class ConfigForm(forms.ModelForm):
         fields = ['activo', 'modo_demo', 'webphone_url', 'click2dial_url', 'click2dial_token', 'api_url', 'auth_tipo', 'api_token',
                   'api_usuario', 'api_password',
                   'auth_header_nombre', 'tenant_id', 'account_id', 'embudo_entrantes', 'crear_tarjeta_salientes', 'solo_eventos_propios',
-                  'tarea_llamada_perdida', 'descargar_grabaciones', 'polling_activo']
+                  'tarea_llamada_perdida', 'descargar_grabaciones', 'polling_activo', 'softphone_activo',
+                  'softphone_ws', 'sip_dominio', 'sip_puerto']
         widgets = {'api_token': forms.PasswordInput(render_value=True),
                    'click2dial_token': forms.PasswordInput(render_value=True),
                    'api_password': forms.PasswordInput(render_value=True)}
@@ -192,6 +220,7 @@ class ConfigView(PermisoRequeridoMixin, View):
             form = ConfigForm(request.POST, instance=config)
             if form.is_valid():
                 form.save()
+                services.invalidar_softphone(InternoAnura.objects.values_list('usuario_id', flat=True))
                 messages.success(request, 'Configuración de Anura guardada.')
             else:
                 messages.error(request, form.errors.as_text())
@@ -205,14 +234,21 @@ class ConfigView(PermisoRequeridoMixin, View):
             elif conflicto:
                 messages.error(request, f'"{conflicto[0]}" ya está asignado a {conflicto[1].usuario}.')
             else:
-                InternoAnura.objects.update_or_create(usuario=usuario, defaults={'interno': interno, 'alias': alias,
-                                                                                 'activo': True})
+                obj, _ = InternoAnura.objects.update_or_create(usuario=usuario, defaults={
+                    'interno': interno, 'alias': alias, 'activo': True})
+                if request.POST.get('sip_usuario', '').strip():  # vacío = deja las credenciales SIP como estaban
+                    obj.sip_usuario = request.POST['sip_usuario'].strip()
+                    if request.POST.get('sip_password'):
+                        obj.sip_password = request.POST['sip_password']
+                    obj.save(update_fields=['sip_usuario', 'sip_password_cifrada'])
                 cache.delete(f'tiene_interno_{usuario.pk}')
+                services.invalidar_softphone([usuario.pk])
                 messages.success(request, f'Interno {interno} asignado a {usuario}.')
         elif accion == 'borrar_interno':
             obj = InternoAnura.objects.filter(pk=request.POST.get('id')).first()
             if obj:
                 cache.delete(f'tiene_interno_{obj.usuario_id}')
+                services.invalidar_softphone([obj.usuario_id])
                 obj.delete()
         elif accion == 'ruta':
             from apps.crm.models import Embudo

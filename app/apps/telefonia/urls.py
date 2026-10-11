@@ -21,4 +21,7 @@ api_urlpatterns = [
     path('api/telephony/hangup/<str:call_id>', views.HangupView.as_view(), name='hangup'),
     path('api/telephony/estado/', views.EstadoView.as_view(), name='estado'),
     path('api/telephony/calificar/<int:pk>', views.CalificarView.as_view(), name='calificar'),
+    path('api/telephony/softphone/', views.SoftphoneView.as_view(), name='softphone'),
+    path('api/telephony/quien/', views.QuienLlamaView.as_view(), name='quien'),
+    path('telefono/', views.MarcoView.as_view(), name='marco'),
 ]

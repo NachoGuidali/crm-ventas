@@ -800,3 +800,62 @@ def calificar_llamada(llamada, resultado, usuario, nota='', volver_a_llamar=None
     # El tiempo hasta calificar es trabajo post llamada: recién ahora el discador le pasa la próxima
     AgenteDiscador.objects.filter(agente_id=llamada.agente_id).update(libre_desde=ahora)
     return True
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Teléfono dentro del CRM (JsSIP sobre WebSocket)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _clave_softphone(user_id):
+    return f'softphone_{user_id}'
+
+
+def usa_softphone(user):
+    """El agente tiene el teléfono del CRM: integración y teléfono activos y credenciales SIP cargadas."""
+    if not getattr(user, 'is_authenticated', False):
+        return False
+    val = cache.get(_clave_softphone(user.pk))
+    if val is None:
+        config = ConfigAnura.get()
+        interno = InternoAnura.objects.filter(usuario=user, activo=True).first()
+        val = bool(config.activo and config.softphone_activo and config.sip_dominio and interno
+                   and interno.tiene_softphone)
+        cache.set(_clave_softphone(user.pk), val, 300)
+    return val
+
+
+def invalidar_softphone(user_ids):
+    cache.delete_many([_clave_softphone(u) for u in user_ids])
+
+
+def credenciales_softphone(user):
+    """Datos de registro de la terminal CRM del agente (solo los suyos)."""
+    config = ConfigAnura.get()
+    interno = InternoAnura.objects.filter(usuario=user, activo=True).first()
+    if not (config.activo and config.softphone_activo and config.sip_dominio and interno and interno.tiene_softphone):
+        return None
+    dominio = config.sip_dominio.strip()
+    return {
+        'ws': config.softphone_ws.strip(),
+        'uri': f'sip:{interno.sip_usuario}@{dominio}',
+        'usuario': interno.sip_usuario,
+        'password': interno.sip_password,
+        'registrar': f'sip:{dominio}:{config.sip_puerto}' if config.sip_puerto else f'sip:{dominio}',
+        'nombre': user.display_name,
+        'interno': interno.interno,
+    }
+
+
+def quien_llama(user, numero):
+    """Para mostrar en el teléfono quién está llamando (y abrir su ficha)."""
+    from apps.crm.models import Oportunidad
+    from apps.crm.services import buscar_contacto
+    tel = normalizar_telefono(numero or '')
+    contacto = buscar_contacto(telefono=tel) if tel else None
+    if contacto is None:
+        return {'nombre': '', 'numero': tel or numero, 'url': ''}
+    ops = Oportunidad.objects.visibles_para(user).filter(contacto=contacto)
+    op = ops.filter(estado__in=Oportunidad.ESTADOS_ACTIVOS).order_by('-ultima_actividad_at').first() or \
+        ops.order_by('-ultima_actividad_at').first()
+    url = op.get_absolute_url() if op else (contacto.get_absolute_url() if user.ve_todo else '')
+    return {'nombre': contacto.nombre, 'numero': contacto.telefono, 'url': url}

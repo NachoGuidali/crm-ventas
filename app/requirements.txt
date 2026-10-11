@@ -9,3 +9,4 @@ requests==2.32.3
 Pillow==10.4.0
 openpyxl==3.1.5
 twilio==9.3.7
+cryptography==43.0.3

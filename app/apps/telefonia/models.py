@@ -66,6 +66,16 @@ class ConfigAnura(models.Model):
     polling_activo = models.BooleanField(default=False, verbose_name='Polling de respaldo de CDRs',
                                          help_text='Requiere la API de tenant. Cada 5 min recupera llamadas cuyo evento no llegó.')
     ultimo_polling_ok = models.DateTimeField(null=True, blank=True)
+
+    # Teléfono dentro del CRM (terminal SIP por WebSocket con JsSIP)
+    softphone_activo = models.BooleanField(
+        default=False, verbose_name='Teléfono dentro del CRM',
+        help_text='Los agentes con credenciales SIP cargadas atienden, llaman y cortan desde el CRM, sin abrir Anura. '
+                  'La terminal "CRM" de cada interno tiene que ser la principal.')
+    softphone_ws = models.CharField(max_length=200, default='wss://sipwss.anura.dev', verbose_name='Servidor WebSocket')
+    sip_dominio = models.CharField(max_length=200, blank=True, verbose_name='Dominio de la central',
+                                   help_text='Ej.: miempresa.grancentral.com.ar')
+    sip_puerto = models.PositiveIntegerField(null=True, blank=True, default=55090, verbose_name='Puerto de la central')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -112,6 +122,8 @@ class InternoAnura(models.Model):
                   '(usuario SIP, ID de terminal…). Varios separados por coma.',
     )
     activo = models.BooleanField(default=True)
+    sip_usuario = models.CharField(max_length=100, blank=True, verbose_name='Usuario SIP de la terminal CRM')
+    sip_password_cifrada = models.CharField(max_length=500, blank=True, editable=False)
 
     class Meta:
         verbose_name = 'Interno de Anura'
@@ -164,6 +176,20 @@ class InternoAnura(models.Model):
             if repetidos:
                 return sorted(repetidos)[0], i
         return None
+
+    @property
+    def sip_password(self):
+        from core.cifrado import descifrar
+        return descifrar(self.sip_password_cifrada)
+
+    @sip_password.setter
+    def sip_password(self, valor):
+        from core.cifrado import cifrar
+        self.sip_password_cifrada = cifrar(valor)
+
+    @property
+    def tiene_softphone(self):
+        return bool(self.activo and self.sip_usuario and self.sip_password_cifrada)
 
 
 class RutaAnura(models.Model):

@@ -321,3 +321,72 @@ class LlamadaSinAvisoTests(AnuraBase):
         op.refresh_from_db()
         self.assertEqual((op.intentos_contacto, op.etapa.orden), (0, 1))  # no cuenta como intento ni avanza
         self.assertTrue(op.actividades.filter(texto__contains='sin confirmación de Anura').exists())
+
+
+class SoftphoneTests(AnuraBase):
+    def setUp(self):
+        super().setUp()
+        ConfigAnura.objects.filter(pk=1).update(softphone_activo=True, sip_dominio='demo.grancentral.com.ar',
+                                                sip_puerto=55090)
+        interno = InternoAnura.objects.get(usuario=self.agente)
+        interno.sip_usuario = 'crm201'
+        interno.sip_password = 'clave-secreta'
+        interno.save()
+
+    def navegar(self, url, dest='document'):
+        return self.client.get(url, HTTP_SEC_FETCH_DEST=dest, HTTP_SEC_FETCH_MODE='navigate')
+
+    def test_password_cifrada_y_credenciales_solo_propias(self):
+        interno = InternoAnura.objects.get(usuario=self.agente)
+        self.assertNotIn('clave-secreta', interno.sip_password_cifrada)
+        self.assertEqual(interno.sip_password, 'clave-secreta')
+        self.client.force_login(self.agente)
+        d = self.client.post('/api/telephony/softphone/').json()
+        self.assertEqual((d['uri'], d['password'], d['registrar'], d['ws']),
+                         ('sip:crm201@demo.grancentral.com.ar', 'clave-secreta', 'sip:demo.grancentral.com.ar:55090',
+                          'wss://sipwss.anura.dev'))
+        otro = User.objects.create_user('beto', password='x')
+        self.client.force_login(otro)
+        self.assertEqual(self.client.post('/api/telephony/softphone/').status_code, 404)
+
+    def test_marco_fijo_solo_para_quien_tiene_telefono(self):
+        self.client.force_login(self.agente)
+        r = self.navegar('/mi-dia/?x=1')
+        self.assertContains(r, 'id="pantalla" src="/mi-dia/?x=1"')
+        self.assertNotContains(r, 'clave-secreta')  # la contraseña nunca va en el HTML
+        # Dentro del iframe, la pantalla normal
+        r = self.navegar('/mi-dia/', dest='iframe')
+        self.assertNotContains(r, 'id="pantalla"')
+        self.assertEqual(r['X-Frame-Options'], 'SAMEORIGIN')
+        # Descargas, API y navegadores sin el encabezado: sin marco
+        self.assertNotContains(self.navegar('/telefonia/llamadas/?csv=1'), 'id="pantalla"')
+        self.assertNotContains(self.client.get('/mi-dia/'), 'id="pantalla"')
+        # Sin teléfono del CRM: sin marco
+        ConfigAnura.objects.filter(pk=1).update(softphone_activo=False)
+        from django.core.cache import cache
+        cache.clear()
+        self.assertNotContains(self.navegar('/mi-dia/'), 'id="pantalla"')
+
+    def test_quien_llama(self):
+        from apps.crm import services as crm
+        res = crm.ingresar_prospecto({'telefono': '1155554444', 'nombre': 'Juana'}, self.embudo, 'manual',
+                                     agente=self.agente)
+        self.client.force_login(self.agente)
+        d = self.client.get('/api/telephony/quien/', {'numero': '01155554444'}).json()
+        self.assertEqual((d['nombre'], d['url']), ('Juana', res.oportunidad.get_absolute_url()))
+        self.assertEqual(self.client.get('/api/telephony/quien/', {'numero': '999'}).json()['nombre'], '')
+
+    def test_configuracion_desde_la_pantalla(self):
+        admin = User.objects.create_superuser('jefa', password='x', email='j@x.com')
+        self.client.force_login(admin)
+        r = self.client.post('/telefonia/config/', {'accion': 'interno', 'usuario': self.agente.pk, 'interno': '201',
+                                                     'alias': '', 'sip_usuario': 'nuevo', 'sip_password': 'otra'})
+        self.assertEqual(r.status_code, 302)
+        i = InternoAnura.objects.get(usuario=self.agente)
+        self.assertEqual((i.sip_usuario, i.sip_password), ('nuevo', 'otra'))
+        # Reasignar sin credenciales no las borra
+        self.client.post('/telefonia/config/', {'accion': 'interno', 'usuario': self.agente.pk, 'interno': '201',
+                                                'alias': 'x', 'sip_usuario': '', 'sip_password': ''})
+        i.refresh_from_db()
+        self.assertEqual(i.sip_usuario, 'nuevo')
+        self.assertContains(self.client.get('/telefonia/config/', HTTP_SEC_FETCH_DEST='iframe'), 'teléfono CRM: nuevo')

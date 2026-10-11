@@ -54,7 +54,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.users.middleware.ForzarCambioPasswordMiddleware',
+    'core.marco.MarcoTelefonoMiddleware',
 ]
+X_FRAME_OPTIONS = 'SAMEORIGIN'  # el marco del teléfono carga las pantallas del CRM en un iframe propio
 
 ROOT_URLCONF = 'config.urls'
 

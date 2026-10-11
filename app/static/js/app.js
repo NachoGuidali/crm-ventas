@@ -284,12 +284,13 @@
     ultimaLlamadaId = ll.id;
     w.className = 'show ' + (ll.viva ? ll.estado : 'fin');
     w.querySelector('.quien').innerHTML = ll.url ? `<a href="${esc(ll.url)}">${esc(ll.nombre)}</a>` : esc(ll.nombre);
-    w.querySelector('.cortar').style.display = ll.viva && ll.puede_cortar ? '' : 'none';
-    w.querySelector('.hint').style.display = ll.viva && !ll.puede_cortar ? '' : 'none';
+    const tel = telefono(), puedeCortar = ll.puede_cortar || !!tel;
+    w.querySelector('.cortar').style.display = ll.viva && puedeCortar ? '' : 'none';
+    w.querySelector('.hint').style.display = ll.viva && !puedeCortar ? '' : 'none';
     // Si Anura no avisó nada a los 20 s, se ofrece descartar el aviso (se cierra solo a los 3 min)
-    w.querySelector('.descartar').style.display = ll.viva && ll.sin_aviso && !ll.puede_cortar && ll.segundos >= 20 ? '' : 'none';
+    w.querySelector('.descartar').style.display = ll.viva && ll.sin_aviso && !puedeCortar && ll.segundos >= 20 ? '' : 'none';
     const ir = w.querySelector('.ir-anura');
-    ir.style.display = ll.viva && ll.anura_url ? '' : 'none';
+    ir.style.display = ll.viva && ll.anura_url && !tel ? '' : 'none';
     ir.dataset.url = ll.anura_url || '';
     if (!ll.viva) { mostrarFin(ll); return; }
     clearInterval(relojTimer);
@@ -316,11 +317,18 @@
     setTimeout(() => { if (!llamadaActual || !llamadaActual.viva) w.className = ''; }, 8000);
   }
 
+  /** Teléfono del CRM (marco fijo), si esta pantalla está dentro de él. */
+  function telefono() {
+    try { return window.top !== window && window.top.CRMTelefono ? window.top.CRMTelefono : null; } catch (e) { return null; }
+  }
+
   async function llamar(opciones) {
+    const tel = telefono();
+    if (tel) tel.esperarSaliente();  // la terminal del CRM atiende sola cuando Anura la llame
     try {
       const d = await api('/api/telephony/dial', {data: {oportunidadId: opciones.op || null, contactoId: opciones.contacto || null,
                                                           phoneNumber: opciones.tel || ''}});
-      toast('Llamando… atendé tu teléfono de Anura y se disca al cliente');
+      toast(tel ? 'Llamando…' : 'Llamando… atendé tu teléfono de Anura y se disca al cliente');
       pintarLlamada(d.llamada);
       clearTimeout(pulsoTimer); pulsoTimer = setTimeout(pulso, 2000);
     } catch (e) { /* toast ya mostrado */ }
@@ -331,7 +339,9 @@
     if (!w) return;
     w.querySelector('.cortar').addEventListener('click', async () => {
       if (!llamadaActual) return;
-      try { await api('/api/telephony/hangup/' + llamadaActual.id, {method: 'PUT'}); toast('Cortando…'); } catch (e) {}
+      const tel = telefono();
+      if (tel && tel.cortar()) { toast('Cortando…'); }
+      else { try { await api('/api/telephony/hangup/' + llamadaActual.id, {method: 'PUT'}); toast('Cortando…'); } catch (e) {} }
       clearTimeout(pulsoTimer); pulsoTimer = setTimeout(pulso, 1500);
     });
     w.querySelector('.cerrar').addEventListener('click', () => { w.className = ''; });
@@ -506,5 +516,7 @@
     if (document.body.dataset.auth === '1') pulso();
   });
 
-  window.CRM = {api, toast, esc, hace, llamar, abrirCierre, csrf, mover};
+  // El teléfono del marco avisa cuando atiende o corta: se refresca el aviso de llamada al toque
+  const pulsoYa = () => { clearTimeout(pulsoTimer); pulsoTimer = setTimeout(pulso, 300); };
+  window.CRM = {api, toast, esc, hace, llamar, abrirCierre, csrf, mover, pulsoYa};
 })();

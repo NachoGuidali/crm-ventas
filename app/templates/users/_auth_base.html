@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{% static 'css/main.css' %}"><link rel="stylesheet" href="{% static 'css/app.css' %}">
 </head>
 <body>
+<script>if (window.top !== window) window.top.location.replace(location.href);  // nunca dentro del marco del teléfono</script>
 <div class="login-page"><div class="login-card">
   <div class="login-brand"><div class="logo-mark">{{ CRM_NOMBRE|slice:":1" }}V</div><div><div class="logo-label">{{ CRM_NOMBRE }}</div><div class="small muted">{{ CRM_SUBTITULO }}</div></div></div>
   {% if messages %}{% for m in messages %}<div class="alert alert-{% if m.tags == 'error' %}danger{% else %}{{ m.tags }}{% endif %} py-2 small">{{ m }}</div>{% endfor %}{% endif %}

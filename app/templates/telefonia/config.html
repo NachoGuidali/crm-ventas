@@ -9,6 +9,16 @@
     <div class="d-flex gap-4 mb-2"><label class="d-flex gap-2">{{ form.activo }} Integración activa</label><label class="d-flex gap-2">{{ form.modo_demo }} Modo demostración</label></div>
     <div class="form-text mb-2">En modo demostración las llamadas se simulan (sin costo) para capacitar y presentar el circuito.</div>
     <div class="row g-2">
+      <div class="col-12"><div class="p-2 rounded" style="background:var(--bg3)">
+        <label class="d-flex gap-2 fw-semibold">{{ form.softphone_activo }} {{ form.softphone_activo.label }}</label>
+        <div class="form-text mb-2">{{ form.softphone_activo.help_text }} Las pantallas cargan dentro de un marco fijo: navegar no corta la llamada.</div>
+        <div class="row g-2">
+          <div class="col-md-5"><label class="form-label small">{{ form.softphone_ws.label }}</label>{{ form.softphone_ws }}</div>
+          <div class="col-md-5"><label class="form-label small">{{ form.sip_dominio.label }}</label>{{ form.sip_dominio }}</div>
+          <div class="col-md-2"><label class="form-label small">Puerto</label>{{ form.sip_puerto }}</div>
+        </div>
+        <div class="form-text">Usuario y contraseña SIP de cada terminal: abajo, en Internos.</div>
+      </div></div>
       <div class="col-12"><label class="form-label">{{ form.webphone_url.label }}</label>{{ form.webphone_url }}<div class="form-text">{{ form.webphone_url.help_text }}</div></div>
       <div class="col-12"><label class="form-label">{{ form.click2dial_token.label }}</label>{{ form.click2dial_token }}<div class="form-text">{{ form.click2dial_token.help_text }} Lo genera un administrador de la cuenta de Anura.</div></div>
       <div class="col-12"><label class="form-label">{{ form.click2dial_url.label }}</label>{{ form.click2dial_url }}<div class="form-text">{{ form.click2dial_url.help_text }}</div></div>
@@ -57,14 +67,17 @@
 
 <div class="col-lg-6">
   <div class="card mb-3"><div class="card-header">Internos de los agentes (click2call y discador)</div><div class="card-body">
-    <table class="table table-sm"><tbody>{% for i in internos %}<tr><td>{{ i.usuario.display_name }}</td><td><code>{{ i.interno }}</code>{% if i.alias %}<div class="small muted">alias: {{ i.alias }}</div>{% endif %}</td>
+    <table class="table table-sm"><tbody>{% for i in internos %}<tr><td>{{ i.usuario.display_name }}</td><td><code>{{ i.interno }}</code>{% if i.alias %}<div class="small muted">alias: {{ i.alias }}</div>{% endif %}{% if i.tiene_softphone %}<div class="small"><span class="chip ok"><i class="bi bi-headset"></i> teléfono CRM: {{ i.sip_usuario }}</span></div>{% endif %}</td>
       <td class="text-end"><form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ i.pk }}"><button name="accion" value="borrar_interno" class="btn btn-xs btn-outline-danger"><i class="bi bi-x"></i></button></form></td></tr>
     {% empty %}<tr><td class="muted">Sin internos.</td></tr>{% endfor %}</tbody></table>
-    <form method="post" class="d-flex gap-2">{% csrf_token %}<input type="hidden" name="accion" value="interno">
-      <select name="usuario" class="form-select form-select-sm">{% for u in usuarios %}<option value="{{ u.pk }}">{{ u.display_name }}</option>{% endfor %}</select>
-      <input name="interno" class="form-control form-control-sm" placeholder="Interno / terminal" required>
-      <input name="alias" class="form-control form-control-sm" placeholder="Alias (opcional)"><button class="btn btn-sm btn-primary">Asignar</button></form>
-    <div class="form-text">El <b>interno</b> se usa para originar y cortar llamadas. El <b>alias</b> sirve si Anura nombra al mismo teléfono de otra forma en los avisos (usuario SIP, ID de terminal); se pueden poner varios separados por coma.</div>
+    <form method="post" class="row g-2">{% csrf_token %}<input type="hidden" name="accion" value="interno">
+      <div class="col-md-4"><select name="usuario" class="form-select form-select-sm">{% for u in usuarios %}<option value="{{ u.pk }}">{{ u.display_name }}</option>{% endfor %}</select></div>
+      <div class="col-md-4"><input name="interno" class="form-control form-control-sm" placeholder="Interno / terminal" required></div>
+      <div class="col-md-4"><input name="alias" class="form-control form-control-sm" placeholder="Alias (opcional)"></div>
+      <div class="col-md-4"><input name="sip_usuario" class="form-control form-control-sm" placeholder="Usuario SIP (terminal CRM)" autocomplete="off"></div>
+      <div class="col-md-4"><input name="sip_password" type="password" class="form-control form-control-sm" placeholder="Contraseña SIP" autocomplete="new-password"></div>
+      <div class="col-md-4"><button class="btn btn-sm btn-primary w-100">Asignar</button></div></form>
+    <div class="form-text">El <b>interno</b> se usa para originar y cortar llamadas. El <b>alias</b> sirve si Anura nombra al mismo teléfono de otra forma en los avisos (usuario SIP, ID de terminal); se pueden poner varios separados por coma. <b>Usuario y contraseña SIP</b>: los de la terminal "CRM" creada en Anura para ese interno (para el teléfono dentro del CRM); la contraseña se guarda cifrada. Para cambiarlos, volvé a asignar el interno.</div>
   </div></div>
 
   <div class="card mb-3"><div class="card-header">Ruteo de entrantes (DID / cola → embudo)</div><div class="card-body">

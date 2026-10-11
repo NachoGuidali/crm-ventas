@@ -167,7 +167,7 @@
         <div class="user-name">{{ user.display_name }}</div>
         <div class="user-role">{{ user.get_rol_display_full }}</div>
       </div>
-      <form method="post" action="{% url 'users:logout' %}">{% csrf_token %}
+      <form method="post" action="{% url 'users:logout' %}" target="_top">{% csrf_token %}
         <button class="icon-btn" title="Cerrar sesión" style="background:transparent;border:none;color:var(--text3)"><i class="bi bi-box-arrow-right"></i></button>
       </form>
     </div>
@@ -214,7 +214,7 @@
             <li><a class="dropdown-item" href="{% url 'users:perfil' %}"><i class="bi bi-person me-2"></i>Mi perfil</a></li>
             <li><a class="dropdown-item" href="{% url 'users:password_change' %}"><i class="bi bi-key me-2"></i>Cambiar contraseña</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><form method="post" action="{% url 'users:logout' %}">{% csrf_token %}<button class="dropdown-item text-danger"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></form></li>
+            <li><form method="post" action="{% url 'users:logout' %}" target="_top">{% csrf_token %}<button class="dropdown-item text-danger"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></form></li>
           </ul>
         </div>
       </div>
