@@ -1,6 +1,6 @@
 # Pendiente: softphone dentro del CRM (JsSIP)
 
-Estado: **implementado (11/10/2026), falta probar con una terminal real.** Probado en navegador: el marco fijo
+Estado: **implementado (11/10/2026). Probado OK con terminal real el 12/10/2026: llamada saliente desde el CRM.** Falta probar entrante, navegar con llamada, discador, eventos y grabación. Probado en navegador: el marco fijo
 navega sin recargar el teléfono y la terminal se conecta a `wss://sipwss.anura.dev` y registra (con credenciales falsas
 Anura responde "autenticación incorrecta", o sea que el camino funciona).
 
@@ -18,7 +18,8 @@ Anura responde "autenticación incorrecta", o sea que el camino funciona).
 - El aviso de llamada de las pantallas usa el teléfono para cortar y ya no muestra "Ir a Anura".
 
 ### Para probar (interno 126)
-1. En Anura: crear una terminal nueva en el interno 126, marcarla **principal**, anotar usuario y contraseña SIP.
+1. En Anura: CONFIGURACIÓN → CUENTAS → interno → MODIFICAR → pestaña TERMINALES → AGREGAR (nombre, usuario a
+   elección; la contraseña la genera Anura) → marcarla **principal**. Para entrantes: sumarla a grupos de ringueo y colas.
 2. En el CRM: activar el teléfono, cargar dominio/puerto y las credenciales en el interno.
 3. Probar: registro (barra verde), Llamar desde una ficha (atiende sola), cortar desde el CRM, entrante, navegar con
    la llamada en curso, eventos y grabación.
