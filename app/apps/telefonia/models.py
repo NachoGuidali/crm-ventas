@@ -144,7 +144,11 @@ class InternoAnura(models.Model):
 
     @property
     def identificadores(self):
-        return [self.interno] + [a for a in self.limpiar_alias(self.alias) if a != self.interno]
+        """Cómo puede nombrar Anura a este agente en los eventos: interno, alias y usuario SIP de la terminal CRM."""
+        ids = [self.interno] + [a for a in self.limpiar_alias(self.alias) if a != self.interno]
+        if self.sip_usuario and self.sip_usuario not in ids:
+            ids.append(self.sip_usuario)
+        return ids
 
     def save(self, *args, **kwargs):
         self.interno = self.interno.strip()

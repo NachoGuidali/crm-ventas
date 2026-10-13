@@ -378,6 +378,14 @@ class SoftphoneTests(AnuraBase):
         cache.clear()
         self.assertNotContains(self.navegar('/mi-dia/'), 'id="pantalla"')
 
+    def test_evento_con_el_usuario_sip_de_la_terminal_se_asigna_al_agente(self):
+        # Atendida en la terminal CRM: Anura puede nombrar al agente por el usuario SIP en vez del interno
+        ConfigAnura.objects.filter(pk=1).update(solo_eventos_propios=True)
+        self.webhook({'callId': 'IVR-4', 'direction': 'IN', 'status': 'ANSWER', 'calling': '1155553333',
+                      'called': '9009', 'terminal': 'crm201', 'billSeconds': 40})
+        ll = Llamada.objects.get(call_id='IVR-4')
+        self.assertEqual((ll.agente, ll.estado), (self.agente, Llamada.ESTADO_ATENDIDA))
+
     def test_quien_llama(self):
         from apps.crm import services as crm
         res = crm.ingresar_prospecto({'telefono': '1155554444', 'nombre': 'Juana'}, self.embudo, 'manual',
