@@ -403,6 +403,7 @@ class EventoAnura(models.Model):
     class Meta:
         ordering = ['-recibido_at', '-pk']
         verbose_name = 'Evento de Anura'
+        verbose_name_plural = 'Eventos de Anura'
 
     def _dato(self, *claves):
         p = self.payload if isinstance(self.payload, dict) else {}
@@ -419,4 +420,3 @@ class EventoAnura(models.Model):
     @property
     def de_a(self):
         return f"{self._dato('calling', 'from') or '?'} → {self._dato('called', 'to') or '?'}"
-        verbose_name_plural = 'Eventos de Anura'
