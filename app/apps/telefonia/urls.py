@@ -23,5 +23,6 @@ api_urlpatterns = [
     path('api/telephony/calificar/<int:pk>', views.CalificarView.as_view(), name='calificar'),
     path('api/telephony/softphone/', views.SoftphoneView.as_view(), name='softphone'),
     path('api/telephony/quien/', views.QuienLlamaView.as_view(), name='quien'),
+    path('api/telephony/softphone/registro/', views.SoftphoneRegistroView.as_view(), name='softphone_registro'),
     path('telefono/', views.MarcoView.as_view(), name='marco'),
 ]

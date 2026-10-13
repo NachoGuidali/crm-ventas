@@ -92,6 +92,18 @@ class SoftphoneView(LoginRequiredMixin, View):
         return resp
 
 
+class SoftphoneRegistroView(LoginRequiredMixin, View):
+    """El teléfono del CRM informa una entrante atendida (fase 'atendida' y 'fin')."""
+
+    def post(self, request):
+        d = json_body(request)
+        if d.get('fase') not in ('atendida', 'fin') or not d.get('id'):
+            return error('Datos incompletos.')
+        llamada = services.registrar_desde_softphone(request.user, str(d['id']), d['fase'], d.get('numero', ''),
+                                                     d.get('segundos') or 0)
+        return ok(llamada=llamada.pk if llamada else None)
+
+
 class QuienLlamaView(LoginRequiredMixin, View):
     def get(self, request):
         return ok(**services.quien_llama(request.user, request.GET.get('numero', '')))

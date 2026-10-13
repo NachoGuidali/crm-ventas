@@ -184,6 +184,15 @@
       atender();
       return;
     }
+    // Entrante real: el teléfono también la registra en el CRM (respaldo si Anura no manda el aviso)
+    const registrar = (fase, segundos) => fetch('/api/telephony/softphone/registro/', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'X-CSRFToken': csrf(), 'Content-Type': 'application/json'},
+      body: JSON.stringify({id: s.id, fase, numero, segundos}),
+    }).then(avisarPantalla).catch(() => {});
+    let atendidaEn = null;
+    s.on('accepted', () => { atendidaEn = Date.now(); registrar('atendida'); });
+    s.on('ended', () => { if (atendidaEn) registrar('fin', Math.round((Date.now() - atendidaEn) / 1000)); });
     mostrarLlamada('sonando', {nombre: nombreSip, numero: numero});
     sonarTimbre();
     fetch('/api/telephony/quien/?numero=' + encodeURIComponent(numero), {credentials: 'same-origin'})

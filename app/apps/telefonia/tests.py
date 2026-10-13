@@ -426,3 +426,42 @@ class AvisosAnuraTests(AnuraBase):
         admin = User.objects.create_superuser('jefa', password='x', email='j@x.com')
         self.client.force_login(admin)
         self.assertContains(self.client.get('/telefonia/config/'), 'Últimos avisos de Anura')
+
+
+class RegistroDesdeSoftphoneTests(AnuraBase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.agente)
+
+    def registrar(self, fase, segundos=0, sip='abc123'):
+        return self.client.post('/api/telephony/softphone/registro/', json.dumps(
+            {'id': sip, 'fase': fase, 'numero': '1155557777', 'segundos': segundos}), content_type='application/json')
+
+    def test_entrante_sin_aviso_de_anura_queda_registrada_y_pide_resultado(self):
+        from .services import pendiente_de_calificar
+        self.assertEqual(self.registrar('atendida').status_code, 200)
+        ll = Llamada.objects.get()
+        self.assertEqual((ll.agente, ll.estado, ll.direccion), (self.agente, Llamada.ESTADO_EN_CURSO, 'IN'))
+        self.registrar('fin', 42)
+        ll.refresh_from_db()
+        self.assertEqual((ll.estado, ll.duracion_seg), (Llamada.ESTADO_ATENDIDA, 42))
+        self.assertIsNotNone(ll.oportunidad)  # número nuevo: se creó la tarjeta
+        self.assertEqual(pendiente_de_calificar(self.agente), ll)
+        # Después llega el aviso de Anura con el id real y la grabación: se une a la misma llamada
+        self.webhook({'callId': 'CDR-9', 'direction': 'IN', 'event': 'END', 'status': 'ANSWER', 'calling': '1155557777',
+                      'answerExtension': '201', 'billSeconds': 45, 'wasRecorded': 'true'})
+        self.assertEqual(Llamada.objects.count(), 1)
+        ll.refresh_from_db()
+        self.assertEqual((ll.call_id, ll.duracion_seg, ll.grabada), ('CDR-9', 45, True))
+
+    def test_si_anura_avisa_primero_no_se_duplica(self):
+        self.webhook({'callId': 'CDR-10', 'direction': 'IN', 'event': 'TALK', 'status': 'ANSWER',
+                      'calling': '1155557777', 'answerExtension': '201'})
+        self.registrar('atendida', sip='x1')
+        self.registrar('fin', 30, sip='x1')
+        self.assertEqual(Llamada.objects.count(), 1)
+        ll = Llamada.objects.get()
+        self.assertEqual((ll.call_id, ll.estado), ('CDR-10', Llamada.ESTADO_ATENDIDA))
+
+    def test_datos_incompletos(self):
+        self.assertEqual(self.client.post('/api/telephony/softphone/registro/', {}).status_code, 400)

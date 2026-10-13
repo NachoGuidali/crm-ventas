@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone as dt_tz
 
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from core.phone import normalizar_telefono
@@ -168,6 +169,14 @@ def procesar_evento_llamada(payload: dict, origen='webhook', forzar_final=False)
             _registrar_evento(payload, origen, 'Descartado: no se pudo crear la llamada')
             return None
         if llamada.procesada:
+            if origen != 'softphone' and llamada.origen_registro == 'softphone' and ev.es_final:
+                # La registró el teléfono del CRM; el aviso de Anura trae el id real, la duración y la grabación
+                _actualizar_campos(llamada, ev)
+                llamada.save()
+                _registrar_evento(payload, origen, f'Completó la llamada #{llamada.pk} (registrada por el teléfono del CRM)',
+                                  llamada)
+                _quizas_descargar_grabacion(llamada, config)
+                return llamada
             _registrar_evento(payload, origen, f'Repetido: la llamada #{llamada.pk} ya estaba cerrada', llamada)
             return llamada  # idempotencia: el fin de esta llamada ya se aplicó
         _actualizar_campos(llamada, ev)
@@ -236,6 +245,22 @@ def _obtener_llamada(ev, origen):
             if ev.call_id and not existente.call_id:
                 existente.call_id = ev.call_id
             return existente
+    if ev.direccion == 'IN' and ev.calling:
+        # Entrante atendida en el teléfono del CRM: el teléfono y Anura avisan por separado (ids distintos)
+        numero = normalizar_telefono(ev.calling)
+        usuario_id = next((u for u in map(usuario_de_identificador, ev.terminales) if u), None)
+        desde_softphone = ev.call_id.startswith('sip-')
+        candidatas = Llamada.objects.select_for_update().filter(
+            direccion=Llamada.DIR_ENTRANTE, numero=numero, inicio_at__gte=timezone.now() - timedelta(minutes=15))
+        candidatas = candidatas.filter(call_id__startswith='sip-') if not desde_softphone else \
+            candidatas.exclude(call_id__startswith='sip-')
+        if usuario_id:
+            candidatas = candidatas.filter(Q(agente_id=usuario_id) | Q(agente__isnull=True))
+        candidata = candidatas.order_by('-inicio_at').first()
+        if candidata:
+            if not desde_softphone:
+                candidata.call_id = ev.call_id or candidata.call_id  # se queda con el id real de Anura
+            return candidata
     if ev.direccion == 'OUT':
         # Llamada originada por click2call/discador cuyo callId todavía no conocíamos
         numero = normalizar_telefono(ev.called)
@@ -436,7 +461,12 @@ def _al_finalizar(llamada, config):
     if llamada.campania_contacto_id:
         _actualizar_contacto_campania(llamada)
 
-    if llamada.grabada and config.descargar_grabaciones and not config.modo_demo and \
+    _quizas_descargar_grabacion(llamada, config)
+
+
+def _quizas_descargar_grabacion(llamada, config):
+    if llamada.grabada and config.descargar_grabaciones and not config.modo_demo and not llamada.grabacion_estado and \
+            not str(llamada.call_id or '').startswith('sip-') and \
             (llamada.payload.get('recordingUrl') or llamada.payload.get('audio_file_mp3') or llamada.call_id):
         from .tasks import descargar_grabacion
         Llamada.objects.filter(pk=llamada.pk).update(grabacion_estado=Llamada.GRAB_PENDIENTE)
@@ -889,3 +919,18 @@ def quien_llama(user, numero):
         ops.order_by('-ultima_actividad_at').first()
     url = op.get_absolute_url() if op else (contacto.get_absolute_url() if user.ve_todo else '')
     return {'nombre': contacto.nombre, 'numero': contacto.telefono, 'url': url}
+
+
+
+def registrar_desde_softphone(user, sip_id, fase, numero, segundos=0):
+    """Respaldo: el teléfono del CRM informa una entrante que atendió (por si Anura no manda el aviso).
+    Pasa por el mismo circuito que los avisos de Anura; si después llega el de Anura, se une a esta llamada."""
+    interno = InternoAnura.objects.filter(usuario=user, activo=True).first()
+    if interno is None or not numero:
+        return None
+    payload = {'callId': f'sip-{sip_id}'[:100], 'direction': 'IN', 'calling': str(numero)[:60],
+               'answerExtension': interno.interno, 'status': 'ANSWER',
+               'event': 'END' if fase == 'fin' else 'TALK'}
+    if fase == 'fin':
+        payload['billSeconds'] = max(int(segundos or 0), 1)
+    return procesar_evento_llamada(payload, origen='softphone')
