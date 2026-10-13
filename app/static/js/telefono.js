@@ -78,10 +78,12 @@
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const pulso = () => {
         [0, 0.45].forEach(t => {
-          const o = ctx.createOscillator(), g = ctx.createGain();
-          o.frequency.value = 440; o.connect(g); g.connect(ctx.destination);
-          g.gain.setValueAtTime(0.06, ctx.currentTime + t);
-          o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.35);
+          [440, 480].forEach(f => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+            g.gain.setValueAtTime(0.18, ctx.currentTime + t);
+            o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.38);
+          });
         });
       };
       pulso();
@@ -138,18 +140,36 @@
     }
   }
 
+  function quienAviso(s) {
+    const q = $('#tel .quien').textContent.trim();
+    return q || (s.remote_identity && s.remote_identity.uri ? s.remote_identity.uri.user : 'número privado');
+  }
+
   async function nuevaSesion(e) {
     const s = e.session;
     if (e.originator !== 'remote') return;
+    console.info('[teléfono] llamada entrante a la terminal:', s.remote_identity && s.remote_identity.uri.toString());
     if (sesion) { s.terminate({status_code: 486, reason_phrase: 'Busy Here'}); return; }
     sesion = s;
+    if (externa) { externa = null; bar.classList.remove('externa'); aviso(''); }  // ahora sí entró a esta terminal
     conectarAudio(s);
     const numero = s.remote_identity && s.remote_identity.uri ? s.remote_identity.uri.user : '';
     const nombreSip = s.remote_identity ? s.remote_identity.display_name : '';
     s.on('accepted', () => { mostrarLlamada('en-llamada'); arrancarReloj(); avisarPantalla(); });
     s.on('confirmed', () => { mostrarLlamada('en-llamada'); });
     s.on('ended', terminar);
-    s.on('failed', terminar);
+    s.on('failed', ev => {
+      console.info('[teléfono] llamada no completada:', ev.cause, ev.originator);
+      const motivos = {
+        'Canceled': 'colgaron o la atendió otro teléfono antes de que la atiendas',
+        'Rejected': 'rechazada', 'Busy': 'ocupado', 'No Answer': 'no se atendió a tiempo',
+        'Incompatible SDP': 'problema de audio con la central (códecs)',
+        'User Denied Media Access': 'el navegador no dejó usar el micrófono',
+        'Connection Error': 'se perdió la conexión con la central', 'Request Timeout': 'la central no respondió',
+      };
+      aviso(`Llamada de ${quienAviso(s)} no completada: ${motivos[ev.cause] || ev.cause}.`);
+      terminar();
+    });
     s.on('getusermediafailed', () => {
       aviso('El navegador no dejó usar el micrófono: habilitalo (ícono del candado en la barra de direcciones).');
       const m = $('#tel .microfono'); if (m) m.hidden = false;
@@ -212,13 +232,32 @@
   }
 
   /* ── La pantalla informa la llamada del CRM (nombre y ficha); en modo demostración la barra la muestra ── */
-  let demoLlamada = null;
+  let demoLlamada = null, externa = null;
   function reflejar(ll) {
     if (sesion) {  // teléfono real: completar quién es
       if (ll && ll.viva && ll.nombre) pintarQuien({nombre: ll.nombre, numero: ll.numero, url: ll.url});
       return;
     }
-    if (!window.CRMTelefono.demo) return;
+    if (!window.CRMTelefono.demo) {
+      // La central avisó una llamada de este agente que no entró a esta terminal (sonó en otro dispositivo de Anura)
+      if (ll && ll.viva) {
+        if (!externa || externa.id !== ll.id) {
+          externa = ll;
+          bar.classList.add('externa');
+          mostrarLlamada('externa', {nombre: ll.nombre, numero: ll.numero, url: ll.url});
+          arrancarRelojDesde(Date.now() - (ll.segundos || 0) * 1000);
+          aviso(ll.direccion === 'IN'
+            ? 'Entrante que no sonó en este teléfono: sumá la terminal CRM al grupo de ringueo / cola en Anura.'
+            : 'Llamada en otro teléfono de Anura.');
+        }
+      } else if (externa) {
+        externa = null;
+        bar.classList.remove('externa');
+        clearInterval(reloj);
+        mostrarLlamada(null);
+      }
+      return;
+    }
     if (ll && ll.viva) {
       const nueva = !demoLlamada || demoLlamada.id !== ll.id;
       demoLlamada = ll;

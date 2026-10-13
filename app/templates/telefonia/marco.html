@@ -21,7 +21,9 @@
     #tel[data-estado="conectando"] .estado .dot { background: #F59E0B; animation: titila 1s infinite; }
     #tel[data-estado="error"] .estado .dot { background: #EF4444; }
     #tel .llamada { display: none; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-    #tel.en-llamada .llamada, #tel.sonando .llamada { display: flex; }
+    #tel.en-llamada .llamada, #tel.sonando .llamada, #tel.externa .llamada { display: flex; }
+    #tel.externa .llamada .acciones .btn:not(.ver-ficha) { display: none; }
+    #tel.externa .aviso { display: block; flex: 0 1 auto; color: #F59E0B; }
     #tel.en-llamada, #tel.sonando { background: color-mix(in srgb, var(--bg2) 75%, #22C97A 25%); }
     #tel.sonando { animation: sonar 1.2s ease-in-out infinite; }
     #tel .quien { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
