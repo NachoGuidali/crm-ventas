@@ -219,7 +219,10 @@ a qué teléfono suena la llamada lo decide la central de Anura.
 - Toca **Llamar** en la ficha / tablero / lista / inbox / Mi día → suena su teléfono → atiende → se disca al cliente.
   **Recomendado:** en Anura, *Configuración → Cuentas → (cuenta del agente) → Avanzado*, activar **Auto answer** y
   **Activar Click 2 Dial**: la terminal atiende sola las llamadas que origina Click2Dial, así el agente toca Llamar y
-  ya queda sonando el cliente en su auricular (clave para el discador). No afecta a las entrantes.
+  ya queda sonando el cliente en su auricular (clave para el discador).
+  **Con el teléfono dentro del CRM no hace falta** (el teléfono atiende solo las llamadas que dispara el CRM) y
+  conviene **desactivarlo**: Anura marca también las entrantes del interno para atender solas, y cualquier otra
+  terminal del interno con auto-atención le gana la llamada al CRM.
 - Un **aviso flotante** muestra con quién habla y el tiempo, aunque cambie de pantalla, con el botón **Ir a Anura**.
 - **Corta desde su teléfono** (o corta el cliente); el aviso se cierra solo al llegar el evento END.
 - En entrantes por cola, el aviso con la ficha aparece **al atender** (mientras suena, Anura no sabe quién atenderá).

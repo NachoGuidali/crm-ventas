@@ -115,18 +115,20 @@
     avisarPantalla();
   }
 
-  /** ¿Es la pata del agente de una llamada que disparó el CRM (Click2Dial)? Devuelve {auto, quien}. */
+  /** ¿Es la pata del agente de una llamada que disparó el CRM (Click2Dial)? Devuelve {auto, quien}.
+   *  Solo se atiende sola si el CRM está discando una llamada de este agente. La marca de "auto answer" de Anura no
+   *  alcanza: con el Auto answer de la cuenta activado, Anura la pone también en las entrantes. */
   async function llamadaDelCRM(request) {
     let ll = null;
-    try {  // la llamada saliente en curso del agente según el CRM (Llamar o discador)
+    try {
       const r = await fetch('/api/telephony/estado/', {credentials: 'same-origin'});
       ll = (await r.json()).llamada;
     } catch (e) { /* sin datos */ }
-    const saliente = !!(ll && ll.viva && ll.direccion === 'OUT');
-    const quien = saliente ? {nombre: ll.nombre, numero: ll.numero, url: ll.url} : null;
-    // 1) La pantalla acaba de pedir una llamada  2) Anura la marca para atender sola  3) el CRM tiene una saliente viva
-    const info = (request.getHeader('Call-Info') || '') + ' ' + (request.getHeader('Alert-Info') || '');
-    const auto = Date.now() < salienteHasta || /answer-after|auto[-_ ]?answer|intercom/i.test(info) || saliente;
+    const discando = !!(ll && ll.viva && ll.direccion === 'OUT' && ['discando', 'sonando'].includes(ll.estado));
+    const quien = discando ? {nombre: ll.nombre, numero: ll.numero, url: ll.url} : null;
+    const auto = discando || Date.now() < salienteHasta;
+    console.info('[teléfono] INVITE', {auto, discando, callInfo: request.getHeader('Call-Info'),
+                                       alertInfo: request.getHeader('Alert-Info')});
     return {auto, quien};
   }
 
