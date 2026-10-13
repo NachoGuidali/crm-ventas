@@ -104,4 +104,20 @@
   </div></div>
 </div>
 </div>
+
+<div class="card mt-3" id="avisos"><div class="card-header d-flex align-items-center">Últimos avisos de Anura <span class="muted small ms-2">· qué mandó Anura y qué hizo el CRM (para revisar llamadas que no quedan registradas)</span>
+  <a href="?#avisos" class="small ms-auto">Actualizar</a></div>
+  <div class="table-responsive"><table class="table table-sm mb-0 small">
+    <thead><tr><th>Recibido</th><th>Evento</th><th>Dir.</th><th>De → a</th><th>Resultado</th><th></th></tr></thead>
+    <tbody>{% for e in eventos %}<tr>
+      <td class="text-nowrap">{{ e.recibido_at|date:"d/m H:i:s" }}</td>
+      <td>{{ e.tipo }}</td>
+      <td>{{ e.direccion }}</td>
+      <td class="text-nowrap">{{ e.de_a }}</td>
+      <td class="{% if 'Ignorado' in e.resultado or 'Descartado' in e.resultado or 'SIN AGENTE' in e.resultado %}text-warning{% endif %}">{{ e.resultado }}</td>
+      <td><button type="button" class="btn btn-xs btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#ev{{ e.pk }}">Datos</button></td>
+    </tr><tr class="collapse" id="ev{{ e.pk }}"><td colspan="6"><pre class="mb-0 p-2 rounded" style="background:var(--bg3);white-space:pre-wrap;font-size:11px">{{ e.payload|pprint }}</pre></td></tr>
+    {% empty %}<tr><td colspan="6" class="muted text-center py-3">Todavía no llegó ningún aviso de Anura. Si hiciste llamadas, revisá en Anura que los eventos (Configuración → Eventos y la pestaña Eventos de cada cuenta) estén activos y apunten a este CRM.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
 {% endblock %}

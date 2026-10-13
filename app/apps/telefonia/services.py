@@ -136,21 +136,39 @@ def normalizar_evento(payload: dict, forzar_final=False) -> EventoLlamada:
 # Procesamiento de eventos
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _registrar_evento(payload, origen, resultado, llamada=None):
+    """Guarda el aviso de Anura y qué se hizo (Telefonía Anura → Últimos avisos). Conserva los últimos 500."""
+    from .models import EventoAnura
+    try:
+        e = EventoAnura.objects.create(payload=payload or {}, origen=origen[:15], resultado=resultado[:300], llamada=llamada)
+        if e.pk % 50 == 0:
+            corte = EventoAnura.objects.order_by('-pk').values_list('pk', flat=True)[500:501]
+            if corte:
+                EventoAnura.objects.filter(pk__lte=corte[0]).delete()
+    except Exception as exc:  # pragma: no cover - el registro nunca frena el procesamiento
+        logger.warning('No se pudo guardar el evento de Anura: %s', exc)
+
+
 def procesar_evento_llamada(payload: dict, origen='webhook', forzar_final=False):
     ev = normalizar_evento(payload, forzar_final)
     if not ev.call_id and not ev.uuid:
         logger.warning('Evento de Anura sin callId ni uuid: %s', str(payload)[:300])
+        _registrar_evento(payload, origen, 'Descartado: el aviso no trae callId ni uuid')
         return None
     config = ConfigAnura.get()
     if config.solo_eventos_propios and not _es_evento_propio(ev):
         logger.info('Evento de Anura ignorado (no es de un interno/ruta del CRM): callId=%s', ev.call_id)
+        _registrar_evento(payload, origen, 'Ignorado: no es de un interno ni de una ruta del CRM '
+                                           f'(identificadores: {", ".join(ev.terminales) or "ninguno"})')
         return None
 
     with transaction.atomic():
         llamada = _obtener_llamada(ev, origen)
         if llamada is None:
+            _registrar_evento(payload, origen, 'Descartado: no se pudo crear la llamada')
             return None
         if llamada.procesada:
+            _registrar_evento(payload, origen, f'Repetido: la llamada #{llamada.pk} ya estaba cerrada', llamada)
             return llamada  # idempotencia: el fin de esta llamada ya se aplicó
         _actualizar_campos(llamada, ev)
         if llamada.contacto_id is None:
@@ -166,6 +184,10 @@ def procesar_evento_llamada(payload: dict, origen='webhook', forzar_final=False)
     invalidar_llamada_activa(llamada.agente_id)
     if final:
         _al_finalizar(llamada, config)
+    llamada.refresh_from_db(fields=['agente', 'estado', 'contacto'])
+    _registrar_evento(payload, origen, f'Llamada #{llamada.pk} · {llamada.get_estado_display()} · '
+                                       f'agente: {llamada.agente.display_name if llamada.agente_id else "SIN AGENTE"}'
+                                       f' (identificadores: {", ".join(ev.terminales) or "ninguno"})', llamada)
     return llamada
 
 

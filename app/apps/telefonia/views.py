@@ -21,7 +21,7 @@ from core.utils import error, json_body, ok, paginar, query_sin_page
 
 from . import services
 from .client import ErrorAnura, get_cliente
-from .models import (AgenteDiscador, CampaniaContacto, CampaniaDiscado, ConfigAnura, InternoAnura, Llamada,
+from .models import (AgenteDiscador, CampaniaContacto, CampaniaDiscado, ConfigAnura, EventoAnura, InternoAnura, Llamada,
                      RutaAnura)
 
 logger = logging.getLogger('apps.telefonia')
@@ -204,6 +204,7 @@ class ConfigView(PermisoRequeridoMixin, View):
         return render(request, 'telefonia/config.html', {
             'config': config, 'form': ConfigForm(instance=config),
             'internos': InternoAnura.objects.select_related('usuario'),
+            'eventos': EventoAnura.objects.select_related('llamada')[:30],
             'rutas': RutaAnura.objects.select_related('embudo', 'agente'),
             'usuarios': User.objects.filter(is_active=True), 'embudos': Embudo.objects.filter(activo=True),
             'webhook_spec_url': request.build_absolute_uri('/api/integrations/anura/webhook') + f'?token={config.webhook_token}',

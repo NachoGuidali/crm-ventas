@@ -390,3 +390,33 @@ class AgenteDiscador(models.Model):
     en_pausa = models.BooleanField(default=False)
     libre_desde = models.DateTimeField(default=timezone.now)
     conectado_at = models.DateTimeField(default=timezone.now)
+
+
+class EventoAnura(models.Model):
+    """Aviso recibido de Anura y qué hizo el CRM con él (para diagnosticar). Se guardan los últimos 500."""
+    recibido_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    origen = models.CharField(max_length=15, blank=True)
+    payload = models.JSONField(default=dict)
+    resultado = models.CharField(max_length=300, blank=True)
+    llamada = models.ForeignKey(Llamada, null=True, blank=True, on_delete=models.SET_NULL, related_name='eventos')
+
+    class Meta:
+        ordering = ['-recibido_at', '-pk']
+        verbose_name = 'Evento de Anura'
+
+    def _dato(self, *claves):
+        p = self.payload if isinstance(self.payload, dict) else {}
+        return next((str(p[c]) for c in claves if p.get(c) not in (None, '')), '')
+
+    @property
+    def tipo(self):
+        return self._dato('hooktrigger', 'hookTrigger', 'event', 'status') or '—'
+
+    @property
+    def direccion(self):
+        return self._dato('direction', 'dir') or '—'
+
+    @property
+    def de_a(self):
+        return f"{self._dato('calling', 'from') or '?'} → {self._dato('called', 'to') or '?'}"
+        verbose_name_plural = 'Eventos de Anura'

@@ -409,3 +409,20 @@ class SoftphoneTests(AnuraBase):
         i.refresh_from_db()
         self.assertEqual(i.sip_usuario, 'nuevo')
         self.assertContains(self.client.get('/telefonia/config/', HTTP_SEC_FETCH_DEST='iframe'), 'teléfono CRM: nuevo')
+
+
+class AvisosAnuraTests(AnuraBase):
+    def test_se_registra_cada_aviso_y_el_motivo(self):
+        from .models import EventoAnura
+        self.webhook({'callId': 'A1', 'direction': 'IN', 'status': 'ANSWER', 'calling': '1155554444', 'terminal': '201'})
+        ConfigAnura.objects.filter(pk=1).update(solo_eventos_propios=True)
+        from django.core.cache import cache
+        cache.delete('config_anura')
+        self.webhook({'callId': 'A2', 'direction': 'IN', 'status': 'ANSWER', 'calling': '1155554445', 'terminal': '999'})
+        ok, ignorado = EventoAnura.objects.order_by('pk')
+        self.assertIn('agente: Ana', ok.resultado)
+        self.assertIn('Ignorado', ignorado.resultado)
+        self.assertIn('999', ignorado.resultado)
+        admin = User.objects.create_superuser('jefa', password='x', email='j@x.com')
+        self.client.force_login(admin)
+        self.assertContains(self.client.get('/telefonia/config/'), 'Últimos avisos de Anura')
