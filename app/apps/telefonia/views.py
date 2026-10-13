@@ -104,6 +104,15 @@ class SoftphoneRegistroView(LoginRequiredMixin, View):
         return ok(llamada=llamada.pk if llamada else None)
 
 
+class SoftphoneCortoView(LoginRequiredMixin, View):
+    """El teléfono del CRM cortó: si la llamada sigue viva en el CRM (Anura no avisó el fin), se cierra."""
+
+    def post(self, request):
+        d = json_body(request)
+        llamada = services.cerrar_desde_softphone(request.user, d.get('segundos') or 0, d.get('hace') or 0)
+        return ok(llamada=llamada.pk if llamada else None)
+
+
 class QuienLlamaView(LoginRequiredMixin, View):
     def get(self, request):
         return ok(**services.quien_llama(request.user, request.GET.get('numero', '')))

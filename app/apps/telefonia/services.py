@@ -169,7 +169,9 @@ def procesar_evento_llamada(payload: dict, origen='webhook', forzar_final=False)
             _registrar_evento(payload, origen, 'Descartado: no se pudo crear la llamada')
             return None
         if llamada.procesada:
-            if origen != 'softphone' and llamada.origen_registro == 'softphone' and ev.es_final:
+            cerrada_por_telefono = llamada.origen_registro == 'softphone' or \
+                (isinstance(llamada.payload, dict) and llamada.payload.get('cerradaPorTelefono'))
+            if origen != 'softphone' and cerrada_por_telefono and ev.es_final:
                 # La registró el teléfono del CRM; el aviso de Anura trae el id real, la duración y la grabación
                 _actualizar_campos(llamada, ev)
                 llamada.save()
@@ -232,7 +234,11 @@ def _obtener_llamada(ev, origen):
         # Llamada originada desde el CRM: Click2Dial devuelve nuestro id en la variable custom1.
         propia = Llamada.objects.select_for_update().filter(pk=int(ev.custom[4:])).first()
         if propia:
-            if ev.call_id and not propia.call_id and not Llamada.objects.filter(call_id=ev.call_id).exists():
+            provisorio = not propia.call_id or propia.call_id.startswith(('local-', 'sip-'))
+            if ev.call_id and provisorio and not ev.call_id.startswith(('local-', 'sip-')) and \
+                    not Llamada.objects.filter(call_id=ev.call_id).exists():
+                propia.call_id = ev.call_id  # el id real de Anura reemplaza al provisorio del teléfono
+            elif ev.call_id and not propia.call_id and not Llamada.objects.filter(call_id=ev.call_id).exists():
                 propia.call_id = ev.call_id
             return propia
     if ev.call_id:
@@ -466,7 +472,7 @@ def _al_finalizar(llamada, config):
 
 def _quizas_descargar_grabacion(llamada, config):
     if llamada.grabada and config.descargar_grabaciones and not config.modo_demo and not llamada.grabacion_estado and \
-            not str(llamada.call_id or '').startswith('sip-') and \
+            not str(llamada.call_id or '').startswith(('sip-', 'local-')) and \
             (llamada.payload.get('recordingUrl') or llamada.payload.get('audio_file_mp3') or llamada.call_id):
         from .tasks import descargar_grabacion
         Llamada.objects.filter(pk=llamada.pk).update(grabacion_estado=Llamada.GRAB_PENDIENTE)
@@ -933,4 +939,23 @@ def registrar_desde_softphone(user, sip_id, fase, numero, segundos=0):
                'event': 'END' if fase == 'fin' else 'TALK'}
     if fase == 'fin':
         payload['billSeconds'] = max(int(segundos or 0), 1)
+    return procesar_evento_llamada(payload, origen='softphone')
+
+
+
+def cerrar_desde_softphone(user, segundos=0, hace=0):
+    """El agente cortó en el teléfono del CRM y Anura todavía no avisó el fin: se cierra la llamada viva del agente
+    con la duración que midió el teléfono. Si después llega el END de Anura, completa id real y grabación."""
+    llamada = llamada_activa(user)
+    if llamada is None:
+        return None
+    segundos = max(int(segundos or 0), 0)
+    if llamada.atendida_at:  # Anura avisó cuándo atendió el cliente: la duración real es desde ahí
+        segundos = max(int((timezone.now() - llamada.atendida_at).total_seconds()) - max(int(hace or 0), 0), 0)
+    payload = {'callId': llamada.call_id or f'local-{llamada.pk}', 'custom1': f'crm-{llamada.pk}',
+               'direction': 'IN' if llamada.direccion == Llamada.DIR_ENTRANTE else 'OUT',
+               'event': 'END', 'status': 'ANSWER' if segundos or llamada.atendida_at else 'NOANSWER',
+               'billSeconds': segundos, 'cerradaPorTelefono': True,
+               'calling': llamada.numero if llamada.direccion == Llamada.DIR_ENTRANTE else '',
+               'called': llamada.numero if llamada.direccion == Llamada.DIR_SALIENTE else ''}
     return procesar_evento_llamada(payload, origen='softphone')

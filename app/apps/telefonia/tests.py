@@ -465,3 +465,28 @@ class RegistroDesdeSoftphoneTests(AnuraBase):
 
     def test_datos_incompletos(self):
         self.assertEqual(self.client.post('/api/telephony/softphone/registro/', {}).status_code, 400)
+
+
+class CorteDesdeSoftphoneTests(AnuraBase):
+    def test_corte_cierra_la_llamada_si_anura_no_aviso_y_despues_completa(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        ll = Llamada.objects.create(direccion=Llamada.DIR_SALIENTE, estado=Llamada.ESTADO_EN_CURSO, numero='+5491155550000',
+                                    agente=self.agente, atendida_at=timezone.now() - timedelta(seconds=40),
+                                    origen_registro='click2call')
+        self.client.force_login(self.agente)
+        r = self.client.post('/api/telephony/softphone/corto/', json.dumps({'segundos': 55, 'hace': 8}),
+                             content_type='application/json')
+        self.assertEqual(r.json()['llamada'], ll.pk)
+        ll.refresh_from_db()
+        self.assertEqual(ll.estado, Llamada.ESTADO_ATENDIDA)
+        self.assertTrue(30 <= ll.duracion_seg <= 33)
+        self.assertFalse(ll.viva)
+        # Llega tarde el END de Anura (con su id): completa la misma llamada
+        self.webhook({'callId': 'CDR-77', 'custom1': f'crm-{ll.pk}', 'direction': 'OUT', 'event': 'END', 'status': 'ANSWER',
+                      'called': '1155550000', 'billSeconds': 31, 'wasRecorded': 'true'})
+        self.assertEqual(Llamada.objects.count(), 1)
+        ll.refresh_from_db()
+        self.assertEqual((ll.duracion_seg, ll.grabada, ll.call_id), (31, True, 'CDR-77'))
+        # Sin llamada viva no hace nada
+        self.assertIsNone(self.client.post('/api/telephony/softphone/corto/', {}).json()['llamada'])

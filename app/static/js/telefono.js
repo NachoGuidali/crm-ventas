@@ -166,7 +166,18 @@
     conectarAudio(s);
     const numero = s.remote_identity && s.remote_identity.uri ? s.remote_identity.uri.user : '';
     const nombreSip = s.remote_identity ? s.remote_identity.display_name : '';
-    s.on('accepted', () => { mostrarLlamada('en-llamada'); arrancarReloj(); avisarPantalla(); });
+    s.on('accepted', () => { s.data.atendida = Date.now(); mostrarLlamada('en-llamada'); arrancarReloj(); avisarPantalla(); });
+    // Al cortar: si a los 8 s Anura todavía no avisó el fin, el CRM cierra la llamada con lo que midió el teléfono
+    s.on('ended', () => {
+      if (!s.data.atendida) return;
+      const segundos = Math.round((Date.now() - s.data.atendida) / 1000), corto = Date.now();
+      setTimeout(() => {
+        fetch('/api/telephony/softphone/corto/', {
+          method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf(), 'Content-Type': 'application/json'},
+          body: JSON.stringify({segundos, hace: Math.round((Date.now() - corto) / 1000)}),
+        }).then(avisarPantalla).catch(() => {});
+      }, 8000);
+    });
     s.on('confirmed', () => { mostrarLlamada('en-llamada'); });
     s.on('ended', terminar);
     s.on('failed', ev => {
