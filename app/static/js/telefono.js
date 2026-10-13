@@ -149,7 +149,16 @@
     const s = e.session;
     if (e.originator !== 'remote') return;
     console.info('[teléfono] llamada entrante a la terminal:', s.remote_identity && s.remote_identity.uri.toString());
-    if (sesion) { s.terminate({status_code: 486, reason_phrase: 'Busy Here'}); return; }
+    if (sesion && (sesion.isEnded() || !(sesion.isInProgress() || sesion.isEstablished()))) {
+      console.info('[teléfono] había una llamada anterior trabada: se limpia');
+      terminar();
+    }
+    if (sesion) {
+      console.info('[teléfono] entrante rechazada: ya hay una llamada en curso');
+      s.terminate({status_code: 486, reason_phrase: 'Busy Here'});
+      ultimoFallo = {ts: Date.now(), texto: 'Entró otra llamada mientras hablabas: se respondió ocupado.'};
+      return;
+    }
     sesion = s;
     if (externa) { externa = null; bar.classList.remove('externa'); aviso(''); }  // ahora sí entró a esta terminal
     conectarAudio(s);
@@ -167,7 +176,9 @@
         'User Denied Media Access': 'el navegador no dejó usar el micrófono',
         'Connection Error': 'se perdió la conexión con la central', 'Request Timeout': 'la central no respondió',
       };
-      aviso(`Llamada de ${quienAviso(s)} no completada: ${motivos[ev.cause] || ev.cause}.`);
+      const texto = `Llamada de ${quienAviso(s)} no completada: ${motivos[ev.cause] || ev.cause}.`;
+      ultimoFallo = {ts: Date.now(), texto};
+      aviso(texto);
       terminar();
     });
     s.on('getusermediafailed', () => {
@@ -241,7 +252,7 @@
   }
 
   /* ── La pantalla informa la llamada del CRM (nombre y ficha); en modo demostración la barra la muestra ── */
-  let demoLlamada = null, externa = null;
+  let demoLlamada = null, externa = null, ultimoFallo = null;
   function reflejar(ll) {
     if (sesion) {  // teléfono real: completar quién es
       if (ll && ll.viva && ll.nombre) pintarQuien({nombre: ll.nombre, numero: ll.numero, url: ll.url});
@@ -255,9 +266,13 @@
           bar.classList.add('externa');
           mostrarLlamada('externa', {nombre: ll.nombre, numero: ll.numero, url: ll.url});
           arrancarRelojDesde(Date.now() - (ll.segundos || 0) * 1000);
-          aviso(ll.direccion === 'IN'
-            ? 'Entrante que no sonó en este teléfono: sumá la terminal CRM al grupo de ringueo / cola en Anura.'
-            : 'Llamada en otro teléfono de Anura.');
+          const falloReciente = ultimoFallo && Date.now() - ultimoFallo.ts < 60000;
+          aviso(falloReciente ? ultimoFallo.texto : (ll.direccion === 'IN'
+            ? (ua && ua.isRegistered()
+              ? 'Esta llamada no llegó a este teléfono (sonó en otra terminal del interno, o va a un grupo / cola sin la terminal CRM).'
+              : 'El teléfono no está conectado: la llamada no puede sonar acá.')
+            : 'Llamada en otro teléfono de Anura.'));
+          console.info('[teléfono] la central avisó una llamada que no llegó a esta terminal', ll);
         }
       } else if (externa) {
         externa = null;
