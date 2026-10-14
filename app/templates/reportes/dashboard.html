@@ -124,12 +124,12 @@
 {% endif %}
 <div class="card mt-3"><div class="card-header">Telefonía por vendedora <span class="muted small">· tiempo conectado, habla y after call work</span></div>
   <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-variant-numeric:tabular-nums">
-    <thead><tr><th>Vendedora</th><th class="text-end">Conectada</th><th class="text-end">Llamadas</th><th class="text-end">Salientes</th><th class="text-end">Entrantes</th><th class="text-end">Atendidas</th><th class="text-end">Habla</th><th class="text-end">Prom. por llamada</th><th class="text-end" title="Tiempo entre que corta y su próxima acción en el CRM (tipificar, nota, mover, llamar), hasta 15 min">After call work prom.</th><th class="text-end" title="Tiempo hablando / tiempo conectada">Ocupación</th></tr></thead>
-    <tbody>{% for f in call_center %}<tr><td>{{ f.u.display_name }}</td><td class="text-end">{{ f.conectado_h }} h</td><td class="text-end">{{ f.llamadas }}</td><td class="text-end">{{ f.salientes }}</td><td class="text-end">{{ f.entrantes }}</td><td class="text-end">{{ f.atendidas }}</td>
+    <thead><tr><th>Vendedora</th><th class="text-end">Conectada</th><th class="text-end" title="Tiempo en &quot;No disponible&quot; con el CRM abierto">En pausa</th><th class="text-end">Llamadas</th><th class="text-end">Salientes</th><th class="text-end">Entrantes</th><th class="text-end">Atendidas</th><th class="text-end">Habla</th><th class="text-end">Prom. por llamada</th><th class="text-end" title="Tiempo entre que corta y su próxima acción en el CRM (tipificar, nota, mover, llamar), hasta 15 min">After call work prom.</th><th class="text-end" title="Tiempo hablando / tiempo conectada">Ocupación</th></tr></thead>
+    <tbody>{% for f in call_center %}<tr><td>{{ f.u.display_name }}</td><td class="text-end">{{ f.conectado_h }} h</td><td class="text-end">{% if f.pausa_min %}{{ f.pausa_min }} min{% else %}·{% endif %}</td><td class="text-end">{{ f.llamadas }}</td><td class="text-end">{{ f.salientes }}</td><td class="text-end">{{ f.entrantes }}</td><td class="text-end">{{ f.atendidas }}</td>
       <td class="text-end">{{ f.habla_min }} min</td><td class="text-end">{{ f.promedio_habla|duracion }}</td><td class="text-end">{% if f.acw_prom is not None %}{{ f.acw_prom|duracion }}{% else %}·{% endif %}</td><td class="text-end">{% if f.ocupacion is not None %}{{ f.ocupacion }}%{% else %}·{% endif %}</td></tr>
-    {% empty %}<tr><td colspan="10" class="muted text-center py-3">Sin datos en el período.</td></tr>{% endfor %}</tbody>
+    {% empty %}<tr><td colspan="11" class="muted text-center py-3">Sin datos en el período.</td></tr>{% endfor %}</tbody>
   </table></div>
-  <div class="card-body pt-2"><div class="form-text">"Conectada" = tiempo con el CRM abierto (se mide desde hoy en adelante). After call work: desde que termina la llamada hasta su próxima acción en el CRM, con un tope de 15 min.</div></div>
+  <div class="card-body pt-2"><div class="form-text">"Conectada" = tiempo con el CRM abierto. "En pausa" = parte de ese tiempo en "No disponible" (no recibe leads ni llamadas de la cola). After call work: desde que termina la llamada hasta su próxima acción en el CRM, con un tope de 15 min.</div></div>
 </div>
 {{ serie|json_script:"serie-data" }}
 {% endblock %}

@@ -187,7 +187,7 @@
         <a href="{% url 'crm:oportunidad_nueva' %}" class="btn btn-primary btn-sm d-none d-md-inline-flex align-items-center gap-1"><i class="bi bi-plus-lg"></i> Prospecto</a>
         <form method="post" action="{% url 'users:perfil' %}" class="d-none d-lg-block">{% csrf_token %}
           <input type="hidden" name="disponible" value="{% if user.disponible %}0{% else %}1{% endif %}">
-          <button class="disponible-toggle {% if user.disponible %}si{% else %}no{% endif %}" title="Recibir o no prospectos nuevos">
+          <button class="disponible-toggle {% if user.disponible %}si{% else %}no{% endif %}" title="Recibir o no prospectos nuevos y llamadas de la cola (el tiempo en No disponible queda registrado)">
             <i class="bi bi-circle-fill" style="font-size:7px;vertical-align:middle"></i> {% if user.disponible %}Disponible{% else %}No disponible{% endif %}
           </button>
         </form>

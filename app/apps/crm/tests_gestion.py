@@ -486,3 +486,25 @@ class AccesoPorLlamadaTests(Base):
         self.client.force_login(self.beto)
         agentes = self.client.get('/api/telephony/agentes/').json()['agentes']
         self.assertEqual([(a['nombre'], a['interno']) for a in agentes], [(self.ana.display_name, '201')])
+
+
+class PausasTests(Base):
+    def test_no_disponible_queda_registrado_y_suma_en_metricas_y_supervision(self):
+        from apps.reportes import analisis
+        from apps.users.models import PausaAgente, SesionConexion
+        ahora = timezone.now()
+        SesionConexion.objects.create(usuario=self.ana, inicio=ahora - timedelta(hours=2), ultimo=ahora)
+        self.ana.disponible = False
+        self.ana.save()
+        PausaAgente.objects.filter(usuario=self.ana).update(inicio=ahora - timedelta(minutes=30))
+        self.ana.save()  # sin cambio: no abre otra pausa
+        self.assertEqual(PausaAgente.objects.filter(usuario=self.ana).count(), 1)
+        fila = next(f for f in analisis.call_center(ahora - timedelta(hours=3), ahora + timedelta(minutes=1)) if f['u'] == self.ana)
+        self.assertTrue(29 <= fila['pausa_min'] <= 31)
+        admin = User.objects.create_superuser('jefa', password='x', email='j@x.com')
+        self.client.force_login(admin)
+        r = self.client.get(f'/supervision/?embudo={self.embudo.pk}')
+        self.assertContains(r, 'min en pausa hoy')
+        self.ana.disponible = True
+        self.ana.save(update_fields=['disponible'])
+        self.assertIsNotNone(PausaAgente.objects.get(usuario=self.ana).fin)

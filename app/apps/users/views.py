@@ -152,8 +152,9 @@ class PerfilView(LoginRequiredMixin, View):
         if 'disponible' in request.POST:
             request.user.disponible = request.POST['disponible'] == '1'
             request.user.save(update_fields=['disponible'])
-            messages.success(request, 'Ahora estás ' + ('disponible para recibir prospectos.' if request.user.disponible
-                                                        else 'NO disponible: no vas a recibir prospectos nuevos.'))
+            messages.success(request, 'Ahora estás ' + ('disponible: recibís prospectos y llamadas.' if request.user.disponible
+                                                        else 'NO disponible: no recibís prospectos nuevos ni llamadas de la '
+                                                             'cola (podés llamar igual).'))
             return redirect(request.META.get('HTTP_REFERER') or 'users:perfil')
         form = PerfilForm(request.POST, request.FILES, instance=request.user)
         if form.is_valid():

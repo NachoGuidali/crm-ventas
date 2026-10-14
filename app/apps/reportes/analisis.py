@@ -278,17 +278,22 @@ def call_center(ini, fin, agentes=None, acw_max_min=15):
     sesiones = SesionConexion.objects.filter(inicio__lte=fin).filter(Q(fin__gte=ini) | Q(fin__isnull=True, ultimo__gte=ini))
     if agentes is not None:
         sesiones = sesiones.filter(usuario__in=agentes)
+    tramos = {}
     for s in sesiones:
         desde, hasta = max(s.inicio, ini), min(s.termina, fin)
         if hasta > desde:
             datos.setdefault(s.usuario_id, {'llamadas': 0, 'salientes': 0, 'entrantes': 0, 'atendidas': 0, 'habla': 0,
                                             'acw': [], 'conectado': 0})['conectado'] += (hasta - desde).total_seconds()
+            tramos.setdefault(s.usuario_id, []).append((desde, hasta))
+    for uid, seg in segundos_en_pausa(ini, fin, tramos).items():
+        datos[uid]['pausa'] = seg
     usuarios = {u.pk: u for u in User.objects.filter(pk__in=list(datos))}
     filas = []
     for pk, d in datos.items():
         acw = d.pop('acw')
         d.update(u=usuarios[pk], habla_min=round(d['habla'] / 60), promedio_habla=round(d['habla'] / d['atendidas']) if d['atendidas'] else 0,
                  acw_prom=round(sum(acw) / len(acw)) if acw else None, conectado_h=round(d['conectado'] / 3600, 1),
+                 pausa_min=round(d.get('pausa', 0) / 60),
                  ocupacion=_pct(d['habla'], d['conectado']) if d['conectado'] else None)
         filas.append(d)
     return sorted(filas, key=lambda f: f['u'].display_name.lower())
@@ -385,3 +390,31 @@ def gestion_por(campo, ini, fin, embudo=None):
     for d in res.values():
         d['minutos'] = round(d.pop('seg') / 60)
     return res
+
+
+
+def tramos_conectados(ini, fin, ids):
+    """{usuario_id: [(desde, hasta)]} con el CRM abierto dentro del período."""
+    from apps.users.models import SesionConexion
+    tramos = {}
+    for s in SesionConexion.objects.filter(usuario_id__in=list(ids), inicio__lte=fin).filter(
+            Q(fin__gte=ini) | Q(fin__isnull=True, ultimo__gte=ini)):
+        desde, hasta = max(s.inicio, ini), min(s.termina, fin)
+        if hasta > desde:
+            tramos.setdefault(s.usuario_id, []).append((desde, hasta))
+    return tramos
+
+
+def segundos_en_pausa(ini, fin, tramos):
+    """{usuario_id: segundos en "No disponible" con el CRM abierto} (una pausa olvidada de noche no suma)."""
+    from django.utils import timezone
+    from apps.users.models import PausaAgente
+    ahora, total = timezone.now(), {}
+    for p in PausaAgente.objects.filter(usuario_id__in=list(tramos), inicio__lte=fin).filter(
+            Q(fin__gte=ini) | Q(fin__isnull=True)):
+        p_desde, p_hasta = max(p.inicio, ini), min(p.fin or ahora, fin)
+        for desde, hasta in tramos.get(p.usuario_id, []):
+            solapa = (min(hasta, p_hasta) - max(desde, p_desde)).total_seconds()
+            if solapa > 0:
+                total[p.usuario_id] = total.get(p.usuario_id, 0) + solapa
+    return total

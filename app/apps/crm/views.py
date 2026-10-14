@@ -1278,6 +1278,10 @@ class SupervisionView(PermisoRequeridoMixin, View):
         ausentes = presencia.ausentes(online, en_llamada=en_llamada)
         ultima_vez = dict(SesionConexion.objects.filter(usuario_id__in=ids).values_list('usuario')
                           .annotate(u=Max('ultimo')).values_list('usuario', 'u'))
+        from apps.reportes.analisis import segundos_en_pausa, tramos_conectados
+        from apps.users.models import PausaAgente
+        pausa_hoy = segundos_en_pausa(hoy, ahora, tramos_conectados(hoy, ahora, ids))
+        pausa_desde = dict(PausaAgente.objects.filter(usuario_id__in=ids, fin__isnull=True).values_list('usuario', 'inicio'))
         sesion_desde = dict(SesionConexion.objects.filter(usuario_id__in=online, fin__isnull=True,
                                                           ultimo__gte=ahora - timedelta(minutes=10))
                             .values_list('usuario').annotate(i=Max('inicio')).values_list('usuario', 'i'))
@@ -1290,6 +1294,7 @@ class SupervisionView(PermisoRequeridoMixin, View):
                           'wa': wa.get(a.pk, 0), 'online': a.pk in online, 'desde': sesion_desde.get(a.pk),
                           'ausente_desde': ausentes.get(a.pk), 'sin_calificar': sin_calificar.get(a.pk, 0),
                           'prioritarias': prioritarias.get(a.pk, 0),
+                          'pausa_min': round(pausa_hoy.get(a.pk, 0) / 60), 'pausa_desde': pausa_desde.get(a.pk),
                           'ultima_vez': ultima_vez.get(a.pk)})
         filas.sort(key=lambda f: (not f['online'], f['u'].display_name.lower()))
         return render(request, 'crm/supervision.html', {

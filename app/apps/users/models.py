@@ -167,6 +167,20 @@ class User(AbstractUser):
     def ve_todo(self):
         return self.tiene_permiso('ver_todo')
 
+    def save(self, *args, **kwargs):
+        cambio_disponible = False
+        if self.pk and (kwargs.get('update_fields') is None or 'disponible' in kwargs['update_fields']):
+            antes = User.objects.filter(pk=self.pk).values_list('disponible', flat=True).first()
+            cambio_disponible = antes is not None and antes != self.disponible
+        super().save(*args, **kwargs)
+        if cambio_disponible:  # registro de pausas ("No disponible") para las métricas y Supervisión
+            from django.utils import timezone
+            ahora = timezone.now()
+            if self.disponible:
+                PausaAgente.objects.filter(usuario=self, fin__isnull=True).update(fin=ahora)
+            elif not PausaAgente.objects.filter(usuario=self, fin__isnull=True).exists():
+                PausaAgente.objects.create(usuario=self, inicio=ahora)
+
 
 class NotificacionInterna(models.Model):
     TIPO_ASIGNACION = 'asignacion'
@@ -213,6 +227,17 @@ class NotificacionInterna(models.Model):
     @property
     def icono(self):
         return self.ICONOS.get(self.tipo, 'bell')
+
+
+class PausaAgente(models.Model):
+    """Tramo en que la vendedora estuvo "No disponible" (no recibe leads ni llamadas de la cola)."""
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pausas')
+    inicio = models.DateTimeField(db_index=True)
+    fin = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-inicio']
+        indexes = [models.Index(fields=['usuario', 'inicio'])]
 
 
 class SesionConexion(models.Model):
