@@ -326,7 +326,7 @@
 
   async function llamar(opciones) {
     const tel = telefono();
-    if (tel) tel.esperarSaliente();  // la terminal del CRM atiende sola cuando Anura la llame
+    if (tel) await tel.esperarSaliente();  // atiende sola cuando Anura la llame (y se reconecta si estaba en pausa)
     try {
       const d = await api('/api/telephony/dial', {data: {oportunidadId: opciones.op || null, contactoId: opciones.contacto || null,
                                                           phoneNumber: opciones.tel || ''}});
@@ -380,6 +380,11 @@
       if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
       let data = {};
       try { data = b.dataset.payload ? JSON.parse(b.dataset.payload) : {}; } catch (err) {}
+      if (b.dataset.prompt) {
+        const texto = prompt(b.dataset.prompt, '');
+        if (texto === null) return;
+        data.texto = texto;
+      }
       b.disabled = true;
       try {
         const r = await api(b.dataset.accion, {data});
@@ -388,6 +393,15 @@
         if (r.recargar || b.dataset.recargar) setTimeout(() => location.reload(), 350);
         document.dispatchEvent(new CustomEvent('crm:accion-ok', {detail: {boton: b, respuesta: r}}));
       } catch (err) { /* toast */ } finally { b.disabled = false; }
+    });
+    // Transferir la llamada en curso a otra vendedora (teléfono del CRM)
+    document.addEventListener('click', e => {
+      const b = e.target.closest('[data-transferir]');
+      if (!b) return;
+      e.preventDefault();
+      const tel = telefono();
+      if (!tel || !tel.enLlamada()) { toast('No tenés una llamada en curso en el teléfono del CRM', 'error'); return; }
+      tel.transferir(b.dataset.transferir, b.dataset.nombre || '');
     });
     // Formularios AJAX: <form data-ajax> → envía por fetch, sin recargar
     document.addEventListener('submit', async e => {

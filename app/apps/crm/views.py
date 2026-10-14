@@ -47,10 +47,32 @@ def embudo_actual(request):
     return elegido, embudos
 
 
-def oportunidad_visible(request, pk, lock=False):
-    qs = Oportunidad.objects.visibles_para(request.user).select_related('contacto', 'embudo', 'etapa', 'agente',
-                                                                         'tipificacion')
-    op = qs.filter(pk=pk).first()
+def _interno_de(user):
+    """Interno de Anura del usuario (para transferirle una llamada), o ''."""
+    if user is None:
+        return ''
+    from apps.telefonia.models import InternoAnura
+    return InternoAnura.objects.filter(usuario=user, activo=True).values_list('interno', flat=True).first() or ''
+
+
+ACCESO_POR_LLAMADA_HORAS = 2
+ACCIONES_POR_LLAMADA = ('nota', 'tarea_duenio')
+
+
+def acceso_por_llamada(user, op_id):
+    """La vendedora atendió (o hizo) hace poco una llamada de esta oportunidad aunque sea de otra: puede verla."""
+    from apps.telefonia.models import Llamada
+    return Llamada.objects.filter(agente=user, oportunidad_id=op_id,
+                                  inicio_at__gte=timezone.now() - timedelta(hours=ACCESO_POR_LLAMADA_HORAS)).exists()
+
+
+def oportunidad_visible(request, pk, lock=False, permitir_llamada=False):
+    qs = Oportunidad.objects.select_related('contacto', 'embudo', 'etapa', 'agente', 'tipificacion')
+    op = qs.visibles_para(request.user).filter(pk=pk).first()
+    if op is None and permitir_llamada and acceso_por_llamada(request.user, pk):
+        op = qs.filter(pk=pk).first()
+        if op is not None:
+            op.por_llamada = True  # la ve porque atendió su llamada: solo nota y tarea para la dueña
     if op is None:
         raise Http404('Oportunidad no encontrada')
     return op
@@ -455,7 +477,7 @@ FILTROS_ACTIVIDAD = [
 
 class OportunidadDetalleView(LoginRequiredMixin, View):
     def get(self, request, pk):
-        op = oportunidad_visible(request, pk)
+        op = oportunidad_visible(request, pk, permitir_llamada=True)
         contacto = op.contacto
         actividades = (Actividad.objects.filter(contacto=contacto).select_related('usuario', 'llamada', 'oportunidad__embudo')
                        .order_by('-created_at')[:150])
@@ -468,6 +490,7 @@ class OportunidadDetalleView(LoginRequiredMixin, View):
             'otras': contacto.oportunidades.exclude(pk=op.pk).select_related('embudo', 'etapa', 'agente'),
             'llamadas': contacto.llamadas.select_related('agente').order_by('-inicio_at')[:30],
             'agentes': agentes_activos(), 'tarea_form': TareaForm(user=request.user),
+            'por_llamada': getattr(op, 'por_llamada', False), 'interno_duenia': _interno_de(op.agente),
             'contacto_form': ContactoForm(instance=contacto),
             'datos_extra': datos_extra_display(contacto, op.embudo),
             'documentos': [(c, (contacto.datos_extra or {}).get(c.slug) or [])
@@ -485,9 +508,12 @@ class AccionOportunidadView(LoginRequiredMixin, View):
     """Endpoints AJAX de la ficha y del tablero: nunca recargan la página."""
 
     def post(self, request, pk, accion):
-        op = oportunidad_visible(request, pk)
+        op = oportunidad_visible(request, pk, permitir_llamada=True)
         data = json_body(request)
         user = request.user
+        if getattr(op, 'por_llamada', False) and accion not in ACCIONES_POR_LLAMADA:
+            return error(f'Esta oportunidad es de {op.agente.display_name if op.agente else "otra vendedora"}: '
+                         'podés dejar una nota o una tarea para ella.', 403)
         try:
             handler = getattr(self, f'_{accion}', None)
             if handler is None:
@@ -617,6 +643,20 @@ class AccionOportunidadView(LoginRequiredMixin, View):
             return error(str(e))
         crm.avanzar_desde_inicial(op, user)
         return ok(mensaje='SMS enviado', recargar=True)
+
+    def _tarea_duenio(self, request, op, data, user):
+        """Quien atendió la llamada de una oportunidad ajena le deja una tarea a la dueña."""
+        from apps.users.services import notificar
+        if op.agente is None:
+            return error('La oportunidad no tiene vendedora asignada.')
+        texto = (data.get('texto') or '').strip()
+        titulo = f'Devolverle la llamada a {op.contacto.nombre}' + (f': {texto}' if texto else '')
+        crm.crear_tarea(user, op.agente, titulo[:200], timezone.now() + timedelta(hours=2), oportunidad=op,
+                        tipo=Tarea.TIPO_LLAMADA, descripcion=f'Dejada por {user.display_name}, que atendió su llamada.',
+                        prioridad=Tarea.PRIORIDAD_ALTA)
+        notificar(op.agente, 'sistema', f'{user.display_name} te dejó una tarea: {op.contacto.nombre}', titulo,
+                  op.get_absolute_url())
+        return ok(mensaje=f'Tarea enviada a {op.agente.display_name}')
 
     def _prioridad(self, request, op, data, user):
         poner = not op.prioritaria

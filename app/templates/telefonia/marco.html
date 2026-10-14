@@ -20,6 +20,7 @@
     #tel[data-estado="listo"] .estado .dot { background: #22C97A; }
     #tel[data-estado="conectando"] .estado .dot { background: #F59E0B; animation: titila 1s infinite; }
     #tel[data-estado="error"] .estado .dot { background: #EF4444; }
+    #tel[data-estado="pausa"] .estado .dot { background: #F59E0B; }
     #tel .llamada { display: none; align-items: center; gap: 10px; flex: 1; min-width: 0; }
     #tel.en-llamada .llamada, #tel.sonando .llamada, #tel.externa .llamada { display: flex; }
     #tel.externa .llamada .acciones .btn:not(.ver-ficha) { display: none; }
@@ -62,7 +63,9 @@
   </div>
   <button class="btn btn-sm btn-outline-secondary microfono" hidden><i class="bi bi-mic"></i> Permitir micrófono</button>
   <form id="panelTransferir" hidden>
-    <label class="small d-block mb-1" for="destinoTransferir">Transferir a (interno o número)</label>
+    <div class="small fw-semibold mb-1">Transferir a</div>
+    <div id="agentesTransferir" class="d-grid gap-1 mb-2" style="min-width:250px;max-height:260px;overflow:auto"></div>
+    <label class="small d-block mb-1" for="destinoTransferir">u otro interno / número</label>
     <div class="d-flex gap-2"><input id="destinoTransferir" class="form-control form-control-sm" inputmode="tel" autocomplete="off" placeholder="Ej: 129" style="width:150px">
       <button class="btn btn-sm btn-primary">Transferir</button></div>
     <div class="form-text mt-1" style="max-width:230px">Pasa la llamada directo. Si no se puede, sigue con vos.</div>

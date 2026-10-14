@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   {% block extra_css %}{% endblock %}
 </head>
-<body data-auth="{% if user.is_authenticated %}1{% else %}0{% endif %}" data-interno="{% if tiene_interno_anura %}1{% else %}0{% endif %}">
+<body data-auth="{% if user.is_authenticated %}1{% else %}0{% endif %}" data-interno="{% if tiene_interno_anura %}1{% else %}0{% endif %}" data-disponible="{% if user.disponible %}1{% else %}0{% endif %}">
 {% if user.is_authenticated %}
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <div class="app-layout">

@@ -14,10 +14,11 @@
   const bar = $('#tel'), frame = $('#pantalla'), audio = $('#audioRemoto');
   const csrf = () => $('#csrf').value;
   let ua = null, sesion = null, inicio = null, reloj = null, salienteHasta = 0, timbre = null;
-  let enEspera = false, dominioSip = '';
+  let enEspera = false, dominioSip = '', pausado = false, disponibleActual = true, registrado = [], internoPropio = '';
 
   /* ── Navegación: la URL y el título de la pestaña siguen a la pantalla del iframe ── */
   frame.addEventListener('load', () => {
+    try { aplicarDisponibilidad(frame.contentDocument.body.dataset.disponible !== '0'); } catch (e) { /* */ }
     try {
       const l = frame.contentWindow.location;
       if (l.pathname.startsWith('/usuarios/login')) { location.replace(l.href); return; }
@@ -115,6 +116,7 @@
     audio.muted = false;
     ['.silenciar', '.espera'].forEach(x => $('#tel ' + x).classList.remove('active'));
     $('#panelTransferir').hidden = true;
+    setTimeout(() => aplicarDisponibilidad(disponibleActual), 500);  // si sigue "No disponible", se vuelve a desconectar
     mostrarLlamada(null);
     audio.srcObject = null;
     avisarPantalla();
@@ -249,30 +251,74 @@
     aviso(enEspera ? 'En espera: el cliente no te escucha y vos no lo escuchás.' : '');
   });
 
-  // Transferencia directa (SIP REFER) a un interno o número
+  /* ── "No disponible" en el CRM: el teléfono se desconecta de la central y la cola no le pasa llamadas ── */
+  function aplicarDisponibilidad(disponible) {
+    disponibleActual = disponible;
+    if (!ua || window.CRMTelefono.demo) return;
+    if (!disponible && !sesion && ua.isRegistered()) {
+      pausado = true;
+      ua.unregister();
+      estado('pausa', 'No disponible · no te entran llamadas (podés llamar igual)');
+    } else if (disponible && pausado) {
+      pausado = false;
+      ua.register();
+    }
+  }
+
+  /* ── Transferir: lista de agentes con teléfono (estado en vivo) o un número a mano ── */
+  async function cargarAgentes() {
+    const box = $('#agentesTransferir');
+    box.innerHTML = '<div class="small muted">Cargando…</div>';
+    try {
+      const d = await (await fetch('/api/telephony/agentes/', {credentials: 'same-origin'})).json();
+      box.innerHTML = '';
+      if (!d.agentes.length) { box.innerHTML = '<div class="small muted">No hay otros agentes con teléfono.</div>'; return; }
+      const color = {en_linea: '#22C97A', en_llamada: '#3B7EF6', ausente: '#F59E0B', no_disponible: '#F59E0B', desconectado: '#6b7280'};
+      d.agentes.forEach(a => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 w-100 text-start';
+        b.disabled = a.estado === 'desconectado';
+        b.innerHTML = `<span class="dot" style="width:8px;height:8px;border-radius:50%;background:${color[a.estado]}"></span>
+          <span class="flex-grow-1"></span><span class="small muted"></span>`;
+        b.children[1].textContent = `${a.nombre} · ${a.interno}`;
+        b.children[2].textContent = a.estado_display;
+        b.addEventListener('click', () => transferir(a.interno, a.nombre));
+        box.appendChild(b);
+      });
+    } catch (e) { box.innerHTML = '<div class="small muted">No se pudo cargar la lista.</div>'; }
+  }
+
+  function transferir(destino, nombre) {
+    destino = String(destino || '').replace(/[^0-9*#]/g, '');
+    if (!sesion || !destino) return false;
+    const s = sesion, quien = nombre ? `${nombre} (${destino})` : destino;
+    $('#panelTransferir').hidden = true;
+    aviso(`Transfiriendo a ${quien}…`);
+    try {
+      s.refer(`sip:${destino}@${dominioSip}`, {eventHandlers: {
+        requestFailed: e => aviso(`Anura no aceptó la transferencia (${e.cause || 'rechazada'}). La llamada sigue con vos.`),
+        accepted: () => { aviso(`Llamada transferida a ${quien}.`); try { s.terminate(); } catch (e) { /* ya cortada */ } },
+        failed: e => aviso(`No se pudo transferir a ${quien} (${e.cause || 'no atendió'}). La llamada sigue con vos.`),
+      }});
+    } catch (e) {
+      aviso('No se pudo transferir: ' + e.message);
+      return false;
+    }
+    return true;
+  }
+
   $('#tel .transferir').addEventListener('click', () => {
     const p = $('#panelTransferir');
     p.hidden = !p.hidden;
     $('#teclado').hidden = true;
-    if (!p.hidden) setTimeout(() => $('#destinoTransferir').focus(), 50);
+    if (!p.hidden) cargarAgentes();
   });
   $('#panelTransferir').addEventListener('submit', ev => {
     ev.preventDefault();
-    const destino = $('#destinoTransferir').value.replace(/[^0-9*#]/g, '');
-    if (!sesion || !destino) return;
-    const s = sesion;
-    $('#panelTransferir').hidden = true;
-    aviso(`Transfiriendo a ${destino}…`);
-    try {
-      s.refer(`sip:${destino}@${dominioSip}`, {eventHandlers: {
-        requestFailed: e => aviso(`Anura no aceptó la transferencia (${e.cause || 'rechazada'}). La llamada sigue con vos.`),
-        accepted: () => { aviso(`Llamada transferida a ${destino}.`); try { s.terminate(); } catch (e) { /* ya cortada */ } },
-        failed: e => aviso(`No se pudo transferir a ${destino} (${e.cause || 'no atendió'}). La llamada sigue con vos.`),
-      }});
-    } catch (e) {
-      aviso('No se pudo transferir: ' + e.message);
-    }
+    transferir($('#destinoTransferir').value, '');
   });
+
   $('#tel .abrir-teclado').addEventListener('click', () => { $('#teclado').hidden = !$('#teclado').hidden; $('#panelTransferir').hidden = true; });
   $('#teclado').addEventListener('click', ev => {
     const t = ev.target.closest('[data-tono]');
@@ -356,7 +402,17 @@
 
   /* ── API para las pantallas del CRM (iframe) ── */
   window.CRMTelefono = {
-    esperarSaliente() { salienteHasta = Date.now() + 45000; },
+    /** Antes de llamar: si está "No disponible" (teléfono desconectado), lo reconecta para esta llamada. */
+    esperarSaliente() {
+      salienteHasta = Date.now() + 45000;
+      if (!ua || ua.isRegistered()) return Promise.resolve();
+      return new Promise(resolve => {
+        registrado.push(resolve);
+        try { ua.register(); } catch (e) { resolve(); }
+        setTimeout(resolve, 4000);
+      });
+    },
+    transferir,
     cortar,
     reflejar,
     enLlamada() { return !!(sesion || demoLlamada); },
@@ -423,8 +479,15 @@
     ua.on('connecting', () => estado('conectando', 'Conectando teléfono…'));
     ua.on('connected', () => estado('conectando', 'Registrando interno ' + cred.interno + '…'));
     ua.on('disconnected', () => estado('error', 'Sin conexión con la central (reintentando)'));
-    ua.on('registered', () => { estado('listo', 'Teléfono listo · interno ' + cred.interno); aviso(''); });
-    ua.on('unregistered', () => estado('error', 'Teléfono desconectado'));
+    internoPropio = cred.interno;
+    ua.on('registered', () => {
+      estado('listo', 'Teléfono listo · interno ' + cred.interno); aviso('');
+      registrado.forEach(f => f()); registrado = [];
+    });
+    ua.on('unregistered', () => {
+      if (pausado) estado('pausa', 'No disponible · no te entran llamadas (podés llamar igual)');
+      else estado('error', 'Teléfono desconectado');
+    });
     ua.on('registrationFailed', e => {
       estado('error', 'No se pudo registrar el interno ' + cred.interno);
       aviso(e.cause === 'Authentication Error' ? 'Usuario o contraseña SIP incorrectos.' : (e.cause || ''));

@@ -447,6 +447,12 @@ def _al_finalizar(llamada, config):
         elif llamada.estado == Llamada.ESTADO_ATENDIDA and op.activa:
             crm.avanzar_desde_inicial(op, llamada.agente)
 
+    if op is not None and llamada.estado == Llamada.ESTADO_ATENDIDA and llamada.agente_id and op.agente_id \
+            and llamada.agente_id != op.agente_id:
+        # Otra vendedora atendió (o llamó) a un cliente de la cartera de otra: la dueña se entera
+        notificar(op.agente, 'sistema', f'{llamada.agente.display_name} habló con tu cliente {op.contacto.nombre}',
+                  'Revisá la ficha: puede haberte dejado una nota o una tarea.', op.get_absolute_url())
+
     if llamada.direccion == Llamada.DIR_ENTRANTE and llamada.estado in (Llamada.ESTADO_NO_ATENDIDA, Llamada.ESTADO_OCUPADO):
         nombre = llamada.contacto.nombre if llamada.contacto_id else llamada.numero
         url = op.get_absolute_url() if op else (llamada.contacto.get_absolute_url() if llamada.contacto_id else '')

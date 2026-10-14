@@ -24,6 +24,12 @@
       </div>
     </div>
     <div class="d-flex flex-column align-items-end gap-2">
+      {% if por_llamada %}
+      <div class="ficha-acciones">
+        <button class="btn btn-primary btn-sm" data-accion="{% url 'crm:oportunidad_accion' op.pk 'tarea_duenio' %}" data-prompt="¿Qué le dejás a {{ op.agente.display_name|default:'la vendedora' }}? (opcional)" data-recargar="1"><i class="bi bi-calendar-plus"></i> Dejarle una tarea a {{ op.agente.display_name|default:"la vendedora" }}</button>
+        {% if interno_duenia %}<button class="btn btn-outline-primary btn-sm" data-transferir="{{ interno_duenia }}" data-nombre="{{ op.agente.display_name }}"><i class="bi bi-telephone-forward"></i> Transferirle la llamada</button>{% endif %}
+      </div>
+      {% else %}
       <div class="ficha-acciones">
         {% if contacto.telefono %}
         <button class="btn btn-primary btn-sm" data-llamar data-op="{{ op.pk }}"><i class="bi bi-telephone"></i> Llamar</button>
@@ -55,6 +61,7 @@
         {% endif %}
         {% if request.GET.desde == 'cola' or not user.ve_todo %}<a href="{% url 'crm:siguiente' %}" class="btn btn-outline-primary btn-sm" title="Ir al próximo prospecto de tu cola">Siguiente <i class="bi bi-arrow-right"></i></a>{% endif %}
       </div>
+      {% endif %}
       <div class="d-flex align-items-center gap-2 small">
         <span class="muted">Agente:</span>
         {% if 'reasignar' in perms_crm %}
@@ -67,7 +74,8 @@
     </div>
   </div>
 
-  <div class="stepper">
+  {% if por_llamada %}<div class="alert alert-info py-2 mt-3 mb-0 small"><i class="bi bi-info-circle"></i> Esta oportunidad es de <b>{{ op.agente.display_name|default:"otra vendedora" }}</b>. La ves porque atendiste su llamada: podés dejar una <b>nota</b> (pestaña Actividad), cargar el resultado, dejarle una <b>tarea</b> o <b>transferirle la llamada</b>. Moverla o cerrarla lo hace su vendedora.</div>{% endif %}
+  <div class="stepper{% if por_llamada %} pe-none opacity-75{% endif %}">
     {% for e in etapas %}
     <button class="step {% if e.pk == op.etapa_id %}actual{% elif e.orden < op.etapa.orden and not e.es_cierre %}hecho{% endif %} {{ e.tipo }}" style="--c:{{ e.color }}"
             data-etapa="{{ e.pk }}" data-tipo="{{ e.tipo }}" title="{{ e.descripcion }}">{{ e.nombre }}</button>
@@ -109,7 +117,7 @@
     </div>
 
     <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">Tareas <button class="btn btn-xs btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#nuevaTarea"><i class="bi bi-plus"></i> Agendar</button></div>
+      <div class="card-header d-flex justify-content-between align-items-center">Tareas {% if not por_llamada %}<button class="btn btn-xs btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#nuevaTarea"><i class="bi bi-plus"></i> Agendar</button>{% endif %}</div>
       <div class="card-body">
         <form data-ajax action="{% url 'crm:oportunidad_accion' op.pk 'tarea' %}" id="nuevaTarea" class="collapse mb-3">
           <div class="row g-2">
@@ -135,7 +143,7 @@
     </div>
 
     <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">Datos del contacto <button class="btn btn-xs btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#editContacto"><i class="bi bi-pencil"></i> Editar</button></div>
+      <div class="card-header d-flex justify-content-between align-items-center">Datos del contacto {% if not por_llamada %}<button class="btn btn-xs btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#editContacto"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>
       <div class="card-body">
         <dl class="kv" id="verContacto">
           <dt>Teléfono</dt><dd>{{ contacto.telefono|telefono|default:"—" }}</dd>

@@ -449,3 +449,40 @@ class SinAutocompletarTests(TestCase):
         self.assertIn('name="evolution_api_key"', html)
         self.assertRegex(html, r'name="evolution_api_key"[^>]*autocomplete="new-password"|autocomplete="new-password"[^>]*name="evolution_api_key"')
         self.assertRegex(html, r'name="evolution_api_url"[^>]*autocomplete="off"|autocomplete="off"[^>]*name="evolution_api_url"')
+
+
+class AccesoPorLlamadaTests(Base):
+    def test_quien_atiende_una_llamada_de_otra_cartera_ve_la_ficha_limitada(self):
+        from apps.users.models import NotificacionInterna
+        op = self.ingresar(agente=self.ana).oportunidad
+        self.client.force_login(self.beto)
+        url = op.get_absolute_url()
+        self.assertEqual(self.client.get(url).status_code, 404)
+        ll = self.llamada(op, self.beto)  # Beto atendió la llamada del cliente de Ana
+        r = self.client.get(url)
+        self.assertContains(r, 'Esta oportunidad es de')
+        self.assertContains(r, 'Dejarle una tarea a')
+        accion = lambda a, d=None: self.client.post(f'/oportunidades/{op.pk}/{a}/', json.dumps(d or {}),
+                                                     content_type='application/json')
+        self.assertEqual(accion('nota', {'texto': 'Llamó por la cuota'}).status_code, 200)
+        self.assertEqual(accion('mover', {'etapa': self.etapa('Negociación').pk}).status_code, 403)
+        self.assertEqual(accion('tarea_duenio', {'texto': 'quiere el plan familiar'}).status_code, 200)
+        self.assertTrue(Tarea.objects.filter(oportunidad=op, asignado_a=self.ana, titulo__contains='plan familiar').exists())
+        self.assertTrue(NotificacionInterna.objects.filter(destinatario=self.ana, titulo__contains='te dejó una tarea').exists())
+        # Pasado el rato de la llamada, vuelve a no verla
+        Llamada.objects.filter(pk=ll.pk).update(inicio_at=timezone.now() - timedelta(hours=3))
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_aviso_a_la_duena_y_lista_para_transferir(self):
+        from apps.telefonia.models import InternoAnura
+        from apps.users.models import NotificacionInterna
+        ConfigAnura.objects.filter(pk=1).update(activo=True, modo_demo=True)
+        InternoAnura.objects.create(usuario=self.ana, interno='201')
+        InternoAnura.objects.create(usuario=self.beto, interno='202')
+        op = self.ingresar('1155550001', agente=self.ana).oportunidad
+        tel.procesar_evento_llamada({'callId': 'X9', 'direction': 'IN', 'event': 'END', 'status': 'ANSWER',
+                                     'calling': '1155550001', 'answerExtension': '202', 'billSeconds': 30})
+        self.assertTrue(NotificacionInterna.objects.filter(destinatario=self.ana, titulo__contains='habló con tu cliente').exists())
+        self.client.force_login(self.beto)
+        agentes = self.client.get('/api/telephony/agentes/').json()['agentes']
+        self.assertEqual([(a['nombre'], a['interno']) for a in agentes], [(self.ana.display_name, '201')])

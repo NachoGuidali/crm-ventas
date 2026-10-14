@@ -113,6 +113,42 @@ class SoftphoneCortoView(LoginRequiredMixin, View):
         return ok(llamada=llamada.pk if llamada else None)
 
 
+class AgentesTransferirView(LoginRequiredMixin, View):
+    """Agentes a los que se les puede transferir una llamada, con su estado en vivo."""
+    ESTADOS = {'en_linea': 'en línea', 'en_llamada': 'en llamada', 'ausente': 'ausente',
+               'no_disponible': 'no disponible', 'desconectado': 'desconectado'}
+
+    def get(self, request):
+        from datetime import timedelta
+        from core import presencia
+        internos = list(InternoAnura.objects.filter(activo=True, usuario__is_active=True).exclude(usuario=request.user)
+                        .select_related('usuario'))
+        ids = [i.usuario_id for i in internos]
+        online = presencia.conectados(ids)
+        en_llamada = set(Llamada.objects.filter(estado__in=Llamada.ESTADOS_VIVOS, agente_id__in=ids,
+                                                inicio_at__gte=timezone.now() - timedelta(hours=3))
+                         .values_list('agente_id', flat=True))
+        ausentes = presencia.ausentes(online, en_llamada=en_llamada)
+        orden = {'en_linea': 0, 'en_llamada': 1, 'ausente': 2, 'no_disponible': 3, 'desconectado': 4}
+        agentes = []
+        for i in internos:
+            u = i.usuario
+            if u.pk in en_llamada:
+                estado = 'en_llamada'
+            elif u.pk not in online:
+                estado = 'desconectado'
+            elif not u.disponible:
+                estado = 'no_disponible'
+            elif u.pk in ausentes:
+                estado = 'ausente'
+            else:
+                estado = 'en_linea'
+            agentes.append({'nombre': u.display_name, 'interno': i.interno, 'estado': estado,
+                            'estado_display': self.ESTADOS[estado]})
+        agentes.sort(key=lambda a: (orden[a['estado']], a['nombre'].lower()))
+        return ok(agentes=agentes)
+
+
 class QuienLlamaView(LoginRequiredMixin, View):
     def get(self, request):
         return ok(**services.quien_llama(request.user, request.GET.get('numero', '')))
