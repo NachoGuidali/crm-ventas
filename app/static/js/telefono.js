@@ -14,6 +14,7 @@
   const bar = $('#tel'), frame = $('#pantalla'), audio = $('#audioRemoto');
   const csrf = () => $('#csrf').value;
   let ua = null, sesion = null, inicio = null, reloj = null, salienteHasta = 0, timbre = null;
+  let enEspera = false, dominioSip = '';
 
   /* ── Navegación: la URL y el título de la pestaña siguen a la pantalla del iframe ── */
   frame.addEventListener('load', () => {
@@ -38,7 +39,7 @@
     if (quien !== undefined) pintarQuien(quien);
     const enCurso = modo === 'en-llamada';
     $('#tel .atender').hidden = modo !== 'sonando';
-    ['.silenciar', '.espera', '.abrir-teclado'].forEach(s => { $('#tel ' + s).hidden = !enCurso; });
+    ['.silenciar', '.espera', '.abrir-teclado', '.transferir'].forEach(s => { $('#tel ' + s).hidden = !enCurso; });
     $('#tel .cortar').innerHTML = modo === 'sonando' ? '<i class="bi bi-telephone-x"></i> Rechazar'
                                                       : '<i class="bi bi-telephone-x"></i> Cortar';
     if (!modo) { $('#teclado').hidden = true; $('#tel .reloj').textContent = ''; }
@@ -110,6 +111,10 @@
     pararTimbre();
     clearInterval(reloj);
     sesion = null;
+    enEspera = false;
+    audio.muted = false;
+    ['.silenciar', '.espera'].forEach(x => $('#tel ' + x).classList.remove('active'));
+    $('#panelTransferir').hidden = true;
     mostrarLlamada(null);
     audio.srcObject = null;
     avisarPantalla();
@@ -198,8 +203,6 @@
       aviso('El navegador no dejó usar el micrófono: habilitalo (ícono del candado en la barra de direcciones).');
       const m = $('#tel .microfono'); if (m) m.hidden = false;
     });
-    s.on('hold', () => { $('#tel .espera').classList.add('active'); });
-    s.on('unhold', () => { $('#tel .espera').classList.remove('active'); });
 
     const crm = await llamadaDelCRM(e.request);
     if (crm.auto) {
@@ -232,11 +235,45 @@
     if (sesion.isMuted().audio) { sesion.unmute({audio: true}); b.classList.remove('active'); b.title = 'Silenciar micrófono'; }
     else { sesion.mute({audio: true}); b.classList.add('active'); b.title = 'Activar micrófono'; }
   });
-  $('#tel .espera').addEventListener('click', () => {
+  // Espera propia: corta el audio en las dos direcciones sin renegociar con la central (la espera SIP estándar,
+  // re-INVITE, Anura la rechazaba y cortaba la llamada). El cliente escucha silencio.
+  $('#tel .espera').addEventListener('click', ev => {
     if (!sesion) return;
-    if (sesion.isOnHold().local) sesion.unhold(); else sesion.hold();
+    const b = ev.currentTarget;
+    enEspera = !enEspera;
+    const microSilenciado = $('#tel .silenciar').classList.contains('active');
+    if (enEspera) { sesion.mute({audio: true}); audio.muted = true; }
+    else { if (!microSilenciado) sesion.unmute({audio: true}); audio.muted = false; }
+    b.classList.toggle('active', enEspera);
+    b.title = enEspera ? 'Retomar la llamada' : 'Poner en espera (el cliente no escucha)';
+    aviso(enEspera ? 'En espera: el cliente no te escucha y vos no lo escuchás.' : '');
   });
-  $('#tel .abrir-teclado').addEventListener('click', () => { $('#teclado').hidden = !$('#teclado').hidden; });
+
+  // Transferencia directa (SIP REFER) a un interno o número
+  $('#tel .transferir').addEventListener('click', () => {
+    const p = $('#panelTransferir');
+    p.hidden = !p.hidden;
+    $('#teclado').hidden = true;
+    if (!p.hidden) setTimeout(() => $('#destinoTransferir').focus(), 50);
+  });
+  $('#panelTransferir').addEventListener('submit', ev => {
+    ev.preventDefault();
+    const destino = $('#destinoTransferir').value.replace(/[^0-9*#]/g, '');
+    if (!sesion || !destino) return;
+    const s = sesion;
+    $('#panelTransferir').hidden = true;
+    aviso(`Transfiriendo a ${destino}…`);
+    try {
+      s.refer(`sip:${destino}@${dominioSip}`, {eventHandlers: {
+        requestFailed: e => aviso(`Anura no aceptó la transferencia (${e.cause || 'rechazada'}). La llamada sigue con vos.`),
+        accepted: () => { aviso(`Llamada transferida a ${destino}.`); try { s.terminate(); } catch (e) { /* ya cortada */ } },
+        failed: e => aviso(`No se pudo transferir a ${destino} (${e.cause || 'no atendió'}). La llamada sigue con vos.`),
+      }});
+    } catch (e) {
+      aviso('No se pudo transferir: ' + e.message);
+    }
+  });
+  $('#tel .abrir-teclado').addEventListener('click', () => { $('#teclado').hidden = !$('#teclado').hidden; $('#panelTransferir').hidden = true; });
   $('#teclado').addEventListener('click', ev => {
     const t = ev.target.closest('[data-tono]');
     if (t && sesion) { try { sesion.sendDTMF(t.dataset.tono); } catch (e) { /* */ } }
@@ -299,7 +336,7 @@
       const nueva = !demoLlamada || demoLlamada.id !== ll.id;
       demoLlamada = ll;
       mostrarLlamada('en-llamada', {nombre: ll.nombre, numero: ll.numero, url: ll.url});
-      ['.silenciar', '.espera', '.abrir-teclado'].forEach(x => { $('#tel ' + x).hidden = true; });
+      ['.silenciar', '.espera', '.abrir-teclado', '.transferir'].forEach(x => { $('#tel ' + x).hidden = true; });
       if (nueva || ll.atendida) { inicio = Date.now() - (ll.segundos || 0) * 1000; }
       if (nueva) arrancarRelojDesde(inicio);
     } else if (demoLlamada) {
@@ -368,6 +405,7 @@
       aviso(cred.falta);
       return;
     }
+    dominioSip = cred.uri.split('@')[1] || '';
     ua = new JsSIP.UA({
       sockets: [new JsSIP.WebSocketInterface(cred.ws)],
       uri: cred.uri,

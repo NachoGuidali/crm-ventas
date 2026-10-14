@@ -35,7 +35,9 @@
     #tel.en-llamada .aviso, #tel.sonando .aviso { display: none; }
     #teclado { position: absolute; top: 46px; right: 14px; background: var(--bg2); border: 1px solid var(--border);
                border-radius: 10px; padding: 10px; display: grid; grid-template-columns: repeat(3, 48px); gap: 6px; }
-    #teclado[hidden] { display: none; }
+    #teclado[hidden], #panelTransferir[hidden] { display: none; }
+    #panelTransferir { position: absolute; top: 46px; right: 14px; background: var(--bg2); border: 1px solid var(--border);
+                       border-radius: 10px; padding: 10px 12px; z-index: 6; }
     @keyframes titila { 50% { opacity: .3; } }
     @keyframes sonar { 50% { background: color-mix(in srgb, var(--bg2) 55%, #22C97A 45%); } }
     @media (prefers-reduced-motion: reduce) { #tel.sonando, #tel .estado .dot { animation: none !important; } }
@@ -52,12 +54,19 @@
       <a class="btn btn-outline-secondary ver-ficha" href="#" title="Abrir la ficha" hidden><i class="bi bi-person-vcard"></i> Ficha</a>
       <button class="btn btn-success atender" hidden><i class="bi bi-telephone-inbound"></i> Atender</button>
       <button class="btn btn-outline-secondary silenciar" hidden title="Silenciar micrófono"><i class="bi bi-mic-mute"></i></button>
-      <button class="btn btn-outline-secondary espera" hidden title="Poner en espera"><i class="bi bi-pause-circle"></i></button>
+      <button class="btn btn-outline-secondary espera" hidden title="Poner en espera (el cliente no escucha)"><i class="bi bi-pause-circle"></i></button>
       <button class="btn btn-outline-secondary abrir-teclado" hidden title="Teclado"><i class="bi bi-grid-3x3-gap"></i></button>
+      <button class="btn btn-outline-secondary transferir" hidden title="Transferir la llamada"><i class="bi bi-telephone-forward"></i> Transferir</button>
       <button class="btn btn-danger cortar"><i class="bi bi-telephone-x"></i> Cortar</button>
     </div>
   </div>
   <button class="btn btn-sm btn-outline-secondary microfono" hidden><i class="bi bi-mic"></i> Permitir micrófono</button>
+  <form id="panelTransferir" hidden>
+    <label class="small d-block mb-1" for="destinoTransferir">Transferir a (interno o número)</label>
+    <div class="d-flex gap-2"><input id="destinoTransferir" class="form-control form-control-sm" inputmode="tel" autocomplete="off" placeholder="Ej: 129" style="width:150px">
+      <button class="btn btn-sm btn-primary">Transferir</button></div>
+    <div class="form-text mt-1" style="max-width:230px">Pasa la llamada directo. Si no se puede, sigue con vos.</div>
+  </form>
   <div id="teclado" hidden>{% for t in "123456789*0#" %}<button type="button" class="btn btn-outline-secondary" data-tono="{{ t }}">{{ t }}</button>{% endfor %}</div>
 </div>
 <input type="hidden" id="csrf" value="{{ csrf_token }}">
