@@ -291,7 +291,17 @@ Si cada pantalla recarga la página, se corta la llamada. Solución usada:
   toma al cerrarse; también cubre el instante de una recarga).
 - Aviso `beforeunload` si hay una llamada en curso. `Sec-Fetch-*` solo se envía en **HTTPS** (o localhost).
 
-### 7.5 Respaldos que conviene tener
+### 7.5 Controles durante la llamada
+- **Espera:** la espera SIP estándar (re-INVITE `hold()`) **Anura la rechazó y cortó la llamada**. Se usa una espera
+  propia: `mute()` del micrófono + silenciar el audio entrante. El cliente escucha silencio (sin música).
+- **Transferir:** `session.refer('sip:<interno>@<dominio>')` (transferencia directa). Lista de agentes con interno y
+  estado en vivo (`GET /api/telephony/agentes/`). Si Anura rechaza el REFER, la llamada sigue y se muestra el motivo.
+  Alternativa si no la acepta: códigos de transferencia de Anura por teclado (DTMF), a pedir a Anura.
+- **No disponible:** `ua.unregister()` (la cola deja de ofrecerle llamadas); al tocar Llamar, `ua.register()` y se
+  espera el registro antes del Click2Dial; al terminar, se vuelve a desconectar. Al volver a Disponible, `register()`.
+- **Ficha de otra cartera:** quien atendió la llamada ve la ficha por un rato (nota, tarea para la dueña, transferirle).
+
+### 7.6 Respaldos que conviene tener
 - **Entrantes atendidas en el teléfono:** el teléfono avisa al CRM al atender y al cortar (`sip-<id>`). Si Anura no
   manda el evento igual queda registrada; cuando llega, se une a la misma llamada.
 - **Al cortar:** si a los 8 s Anura no avisó el END, el CRM cierra la llamada con la duración medida (si Anura avisó
@@ -362,6 +372,9 @@ Si cada pantalla recarga la página, se corta la llamada. Solución usada:
 | Barra "No se pudo registrar … usuario o contraseña" | Credenciales SIP o dominio mal | Revisar usuario de la terminal, contraseña y dominio |
 | No aparece el teléfono | Falta interno del usuario / teléfono no activo / sin HTTPS | La barra debe decir qué falta; usar HTTPS |
 | Al recargar dice "abierto en otra pestaña" | La página anterior no soltó el bloqueo | Esperar el bloqueo en vez de fallar (7.4) |
+| "Poner en espera" corta la llamada | Anura rechaza el re-INVITE de la espera SIP | Espera propia (silenciar en ambos sentidos) |
+| La cola le pasa llamadas a quien está en pausa | El teléfono sigue registrado | "No disponible" desregistra la terminal |
+| Un agente atiende un cliente de otra cartera y la ficha da 404 | Solo ve lo suyo | Acceso temporal por llamada (nota, tarea para la dueña, transferir) |
 | "Llamar" falla desde la oportunidad 1000 en adelante | IDs con separador de miles (`1.000`) en botones / JS | Nunca formatear IDs; separador solo para mostrar |
 
 **Herramienta de diagnóstico imprescindible:** guardar los últimos ~500 avisos de Anura con su resultado y mostrarlos
