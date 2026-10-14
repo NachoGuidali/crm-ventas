@@ -411,3 +411,32 @@ class PrimerContactoTests(Base):
         tel.calificar_llamada(self.llamada(op2, self.ana, call_id='C2'), ResultadoGestion.objects.get(nombre='No le interesa'), self.ana)
         t2.refresh_from_db()
         self.assertEqual(t2.estado, 'completada')
+
+
+class AgenteDemoTests(Base):
+    def test_prepara_la_prueba_y_se_puede_repetir_y_borrar(self):
+        from django.test import override_settings
+        from apps.users.models import User
+        otro = self.ingresar('1177778888', agente=self.ana).oportunidad  # dato que no es de la prueba
+        call_command('agente_demo', telefonos='11 2345 6789', password='clave-1', verbosity=0)
+        call_command('agente_demo', telefonos='11 2345 6789', password='clave-1', verbosity=0)  # repetible
+        u = User.objects.get(username='agente.demo')
+        visibles = Oportunidad.objects.visibles_para(u)
+        self.assertEqual(visibles.count(), 10)
+        self.assertEqual(visibles.filter(prioritaria=True).count(), 1)
+        self.assertTrue(visibles.filter(contacto__telefono='+5491123456789').exists())
+        self.assertTrue(Tarea.objects.filter(asignado_a=u, estado='pendiente', vence_at__lt=timezone.now()).exists())
+        from apps.telefonia.models import CampaniaDiscado
+        self.assertEqual(CampaniaDiscado.objects.get(nombre='Prueba Agente Demo').contactos.count(), 1)
+        # El lead de la landing de prueba le llega a ella
+        with override_settings(DEMO_LANDING=True):
+            self.client.post('/demo/formulario/?origen=Landing%20Prueba',
+                             {'nombre': 'Lead Web', 'telefono': '11 6666 5555', 'origen': 'Landing Prueba'})
+        self.assertEqual(Oportunidad.objects.get(contacto__telefono='+5491166665555').agente, u)
+        self.assertTrue(self.client.login(username='agente.demo', password='clave-1'))
+        # Borrar: quedan los datos ajenos
+        call_command('agente_demo', borrar=True, verbosity=0)
+        self.assertFalse(Oportunidad.objects.filter(fuente='Prueba Agente Demo').exists())
+        self.assertFalse(Oportunidad.objects.filter(contacto__telefono='+5491166665555').exists())
+        self.assertTrue(Oportunidad.objects.filter(pk=otro.pk).exists())
+        self.assertFalse(User.objects.get(username='agente.demo').is_active)
