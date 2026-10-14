@@ -32,3 +32,16 @@ def query_sin_page(request):
     params = request.GET.copy()
     params.pop('page', None)
     return params.urlencode()
+
+
+def sin_autocompletar(form):
+    """Formularios de configuración con claves (tokens, API keys, contraseñas de servicios): que el navegador no los
+    llene con el usuario y la contraseña guardados del CRM ("admin" en la URL, la clave del CRM en la API key)."""
+    from django import forms
+    for f in form.fields.values():
+        w = f.widget
+        if isinstance(w, forms.PasswordInput):
+            w.attrs['autocomplete'] = 'new-password'
+        elif isinstance(w, (forms.TextInput, forms.URLInput, forms.EmailInput, forms.NumberInput)):
+            w.attrs.setdefault('autocomplete', 'off')
+    return form

@@ -440,3 +440,12 @@ class AgenteDemoTests(Base):
         self.assertFalse(Oportunidad.objects.filter(contacto__telefono='+5491166665555').exists())
         self.assertTrue(Oportunidad.objects.filter(pk=otro.pk).exists())
         self.assertFalse(User.objects.get(username='agente.demo').is_active)
+
+
+class SinAutocompletarTests(TestCase):
+    def test_formularios_de_claves_no_se_autocompletan(self):
+        from apps.whatsapp.views import LineaForm
+        html = str(LineaForm())
+        self.assertIn('name="evolution_api_key"', html)
+        self.assertRegex(html, r'name="evolution_api_key"[^>]*autocomplete="new-password"|autocomplete="new-password"[^>]*name="evolution_api_key"')
+        self.assertRegex(html, r'name="evolution_api_url"[^>]*autocomplete="off"|autocomplete="off"[^>]*name="evolution_api_url"')

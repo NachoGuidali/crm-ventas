@@ -74,7 +74,7 @@
       <div class="col-md-4"><select name="usuario" class="form-select form-select-sm">{% for u in usuarios %}<option value="{{ u.pk }}">{{ u.display_name }}</option>{% endfor %}</select></div>
       <div class="col-md-4"><input name="interno" class="form-control form-control-sm" placeholder="Interno / terminal" required></div>
       <div class="col-md-4"><input name="alias" class="form-control form-control-sm" placeholder="Alias (opcional)"></div>
-      <div class="col-md-4"><input name="sip_usuario" class="form-control form-control-sm" placeholder="Usuario SIP (terminal CRM)" autocomplete="off"></div>
+      <div class="col-md-4"><input name="sip_usuario" class="form-control form-control-sm" placeholder="Usuario SIP (terminal CRM)" autocomplete="off" data-lpignore="true"></div>
       <div class="col-md-4"><input name="sip_password" type="password" class="form-control form-control-sm" placeholder="Contraseña SIP" autocomplete="new-password"></div>
       <div class="col-md-4"><button class="btn btn-sm btn-primary w-100">Asignar</button></div></form>
     <div class="form-text">El <b>interno</b> se usa para originar y cortar llamadas. El <b>alias</b> sirve si Anura nombra al mismo teléfono de otra forma en los avisos (usuario SIP, ID de terminal); se pueden poner varios separados por coma. <b>Usuario y contraseña SIP</b>: los de la terminal "CRM" creada en Anura para ese interno (para el teléfono dentro del CRM); la contraseña se guarda cifrada. Para cambiarlos, volvé a asignar el interno.</div>

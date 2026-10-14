@@ -213,6 +213,8 @@ class ConfigForm(forms.ModelForm):
             w = f.widget
             w.attrs['class'] = ('form-check-input' if isinstance(w, forms.CheckboxInput)
                                 else 'form-select' if isinstance(w, forms.Select) else 'form-control')
+        from core.utils import sin_autocompletar
+        sin_autocompletar(self)
 
 
 class ConfigView(PermisoRequeridoMixin, View):

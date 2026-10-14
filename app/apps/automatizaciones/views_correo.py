@@ -70,6 +70,8 @@ class ConfigEmailForm(forms.ModelForm):
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         _estilizar(self)
+        from core.utils import sin_autocompletar
+        sin_autocompletar(self)
 
     def save(self, commit=True):
         nueva = self.cleaned_data.get('password')

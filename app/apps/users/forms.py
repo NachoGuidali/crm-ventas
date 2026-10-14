@@ -74,6 +74,8 @@ class UsuarioForm(forms.ModelForm):
             # Un supervisor con permiso de usuarios no puede crear administradores
             self.fields['rol'].choices = [c for c in User.ROL_CHOICES if c[0] != User.ROL_ADMIN]
         _estilizar(self)
+        from core.utils import sin_autocompletar
+        sin_autocompletar(self)  # al crear un usuario, que no se llene con el usuario y clave de quien lo crea
         if 'modo_password' in self.fields:
             self.fields['modo_password'].widget.attrs['class'] = 'form-check-input'
 

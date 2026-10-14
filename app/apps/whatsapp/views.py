@@ -349,6 +349,8 @@ class LineaForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         from apps.users.models import User
         self.fields['agentes'].queryset = User.objects.filter(is_active=True)
+        from core.utils import sin_autocompletar
+        sin_autocompletar(self)
         for nombre, f in self.fields.items():
             w = f.widget
             if isinstance(w, forms.CheckboxInput) or isinstance(w, forms.CheckboxSelectMultiple):
