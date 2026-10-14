@@ -30,6 +30,10 @@
   button:hover { filter: brightness(1.06); }
   .legal { font-size: 12px; color: var(--gris); margin-top: 12px; text-align: center; }
   .trampa { position: absolute; left: -9999px; }
+  .opciones-contacto { display: flex; gap: 10px; }
+  .opciones-contacto .opt { flex: 1; display: flex; align-items: center; gap: 8px; margin: 0; padding: 11px 14px; border: 1.5px solid var(--borde); border-radius: 10px; font-weight: 500; cursor: pointer; }
+  .opciones-contacto .opt input { width: auto; accent-color: var(--azul); }
+  .opciones-contacto .opt:has(input:checked) { border-color: var(--azul); background: var(--cielo); }
   .pasos { max-width: 1040px; margin: -70px auto 0; padding: 0 20px 60px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
   .paso { background: #fff; border: 1px solid var(--borde); border-radius: 16px; padding: 22px; }
   .paso b { display: block; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 17px; margin: 6px 0 4px; }
@@ -65,6 +69,11 @@
       {% for e in form.telefono.errors %}<div class="err">{{ e }}</div>{% endfor %}
       <label for="id_email">Email <span style="font-weight:400;color:var(--gris)">(opcional)</span></label><input id="id_email" name="email" type="email" value="{{ form.email.value|default:'' }}" autocomplete="email">
       {% for e in form.email.errors %}<div class="err">{{ e }}</div>{% endfor %}
+      <label>¿Cómo preferís que te contactemos?</label>
+      <div class="opciones-contacto">
+        <label class="opt"><input type="radio" name="contacto_por" value="whatsapp" {% if form.contacto_por.value != 'llamada' %}checked{% endif %}> WhatsApp</label>
+        <label class="opt"><input type="radio" name="contacto_por" value="llamada" {% if form.contacto_por.value == 'llamada' %}checked{% endif %}> Llamada</label>
+      </div>
       <label for="id_consulta">¿Qué te interesa? <span style="font-weight:400;color:var(--gris)">(opcional)</span></label><textarea id="id_consulta" name="consulta" rows="3" placeholder="Ej: plan familiar para 4 personas">{{ form.consulta.value|default:'' }}</textarea>
       <button>Quiero que me contacten</button>
       <div class="legal">Usamos tus datos solo para contactarte por esta consulta.</div>

@@ -930,6 +930,23 @@ def marcar_primer_contacto(op, momento=None):
         primer_contacto_at=momento or timezone.now())
 
 
+PREFIJOS_PRIMER_CONTACTO = ('Contactar a ', 'Escribirle por WhatsApp a ', 'Llamar a ')
+
+
+def completar_primer_contacto(op, usuario, como):
+    """La vendedora ya contactó al lead (WhatsApp enviado o llamada atendida): se cierra la tarea automática de primer
+    contacto que se creó al asignarlo, para que no quede pendiente en Mi día."""
+    if op is None:
+        return 0
+    q = Q()
+    for p in PREFIJOS_PRIMER_CONTACTO:
+        q |= Q(titulo__startswith=p)
+    tareas = list(op.tareas.filter(q, estado=Tarea.ESTADO_PENDIENTE, automatica=True))
+    for t in tareas:
+        completar_tarea(t, usuario, resultado=f'Hecha: {como}')
+    return len(tareas)
+
+
 def registrar_intento(op, usuario, canal='llamada', resultado='sin_respuesta', nota='', crear_actividad=True):
     """
     Registra un intento de contacto. Si el prospecto estaba en la primera etapa pasa solo a la

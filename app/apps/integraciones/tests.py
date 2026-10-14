@@ -125,6 +125,11 @@ class LandingDemoTests(TestCase):
         self.assertEqual((op.origen, op.origen_pauta, op.agente), ('web', 'Landing Meta', self.ana))
         self.assertTrue(op.actividades.filter(texto__contains='plan familiar').exists())
         self.assertTrue(NotificacionInterna.objects.filter(destinatario=self.ana, tipo='asignacion').exists())
+        tarea = op.tareas.get(estado='pendiente')  # por defecto prefiere WhatsApp
+        self.assertEqual((tarea.tipo, tarea.titulo, tarea.asignado_a), ('whatsapp', 'Escribirle por WhatsApp a Lucía Prueba', self.ana))
+        self.client.post('/demo/formulario/', {'nombre': 'Pedro', 'telefono': '11 5555 1212', 'contacto_por': 'llamada'})
+        t2 = Oportunidad.objects.get(contacto__telefono='+5491155551212').tareas.get(estado='pendiente')
+        self.assertEqual((t2.tipo, t2.titulo), ('llamada', 'Llamar a Pedro'))
         # Repetido: no duplica
         self.client.post('/demo/formulario/', {'nombre': 'Lucía', 'telefono': '+54 9 11 2345 6789', 'origen': 'Landing Meta'})
         self.assertEqual(Oportunidad.objects.filter(contacto__telefono='+5491123456789').count(), 1)

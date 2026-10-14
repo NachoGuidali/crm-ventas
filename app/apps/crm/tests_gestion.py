@@ -386,3 +386,28 @@ class FormatoNumerosTests(TestCase):
         from django.template import Context, Template
         html = Template('{% load crm_extras %}<b data-op="{{ n }}">{{ n|miles }}</b>').render(Context({'n': 10000}))
         self.assertEqual(html, '<b data-op="10000">10.000</b>')
+
+
+@mock.patch('apps.whatsapp.proveedores.demo.ProveedorDemo._quizas_responder')
+class PrimerContactoTests(Base):
+    def test_whatsapp_o_llamada_atendida_completan_la_tarea_de_primer_contacto(self, _):
+        from apps.whatsapp.models import LineaWhatsApp
+        from apps.whatsapp.services import conversacion_para_contacto, enviar_mensaje
+        op = self.ingresar(agente=self.ana).oportunidad
+        tarea = op.tareas.get(estado='pendiente', automatica=True)
+        linea = LineaWhatsApp.objects.create(nombre='L', proveedor='demo', min_segundos_entre_envios=0)
+        conv = conversacion_para_contacto(op.contacto, linea, agente=self.ana)
+        with self.captureOnCommitCallbacks(execute=True):
+            enviar_mensaje(conv, usuario=self.ana, texto='Hola! Te escribo por tu consulta')
+        tarea.refresh_from_db()
+        self.assertEqual(tarea.estado, 'completada')
+        self.assertIn('WhatsApp', tarea.resultado)
+        # Por teléfono: solo si habló con el cliente
+        op2 = self.ingresar('1144440000', agente=self.ana).oportunidad
+        t2 = op2.tareas.get(estado='pendiente', automatica=True)
+        tel.calificar_llamada(self.llamada(op2, self.ana), ResultadoGestion.objects.get(nombre='Cortó / no quiso hablar'), self.ana)
+        t2.refresh_from_db()
+        self.assertEqual(t2.estado, 'pendiente')
+        tel.calificar_llamada(self.llamada(op2, self.ana, call_id='C2'), ResultadoGestion.objects.get(nombre='No le interesa'), self.ana)
+        t2.refresh_from_db()
+        self.assertEqual(t2.estado, 'completada')

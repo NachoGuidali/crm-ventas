@@ -26,6 +26,8 @@ class LandingForm(forms.Form):
     nombre = forms.CharField(max_length=120, label='Nombre y apellido')
     telefono = forms.CharField(max_length=40, label='Celular (WhatsApp)')
     email = forms.EmailField(required=False, label='Email (opcional)')
+    contacto_por = forms.ChoiceField(choices=[('whatsapp', 'WhatsApp'), ('llamada', 'Llamada')], initial='whatsapp',
+                                     required=False, label='¿Cómo preferís que te contactemos?')
     consulta = forms.CharField(required=False, max_length=600, label='¿Qué te interesa? (opcional)',
                                widget=forms.Textarea(attrs={'rows': 3}))
     sitio = forms.CharField(required=False)  # trampa para bots: los humanos no la ven
@@ -82,6 +84,15 @@ class LandingView(View):
                                      texto=f'Consulta desde la landing: {d["consulta"]}')
         if op is not None and res.oportunidad_nueva:
             op.refresh_from_db()
+            # La tarea de primer contacto sigue la preferencia del lead (WhatsApp o llamada)
+            from apps.crm.models import Tarea
+            por_wa = (d.get('contacto_por') or 'whatsapp') == 'whatsapp'
+            Tarea.objects.filter(oportunidad=op, estado=Tarea.ESTADO_PENDIENTE, automatica=True).update(
+                tipo=Tarea.TIPO_WHATSAPP if por_wa else Tarea.TIPO_LLAMADA,
+                titulo=(f'Escribirle por WhatsApp a {res.contacto.nombre}' if por_wa
+                        else f'Llamar a {res.contacto.nombre}')[:200])
+            Actividad.objects.create(contacto=res.contacto, oportunidad=op, tipo=Actividad.TIPO_NOTA,
+                                     texto=f'Prefiere que lo contacten por {"WhatsApp" if por_wa else "llamada"}.')
             if op.agente_id is None:  # quedó en espera (fuera de horario / sin conectadas / reparto manual)
                 notificar_varios(supervisores_de(embudo), 'asignacion', f'Nuevo lead sin asignar: {res.contacto.nombre}',
                                  f'{origen} · {res.contacto.telefono}', op.get_absolute_url())

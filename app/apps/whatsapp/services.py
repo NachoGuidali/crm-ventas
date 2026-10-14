@@ -248,6 +248,7 @@ def enviar_mensaje(conv, usuario=None, texto='', plantilla=None, valores=None, a
             crm.tocar(op)
             crm.marcar_primer_contacto(op)
             crm.avanzar_desde_inicial(op, usuario)
+            crm.completar_primer_contacto(op, usuario, 'le escribió por WhatsApp')
             if op.prioritaria and op.agente_id == usuario.pk:
                 from apps.crm.models import Oportunidad
                 Oportunidad.objects.filter(pk=op.pk).update(prioritaria=False, prioridad_motivo='')  # ya la atendió

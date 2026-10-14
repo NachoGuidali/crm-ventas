@@ -845,6 +845,8 @@ def calificar_llamada(llamada, resultado, usuario, nota='', volver_a_llamar=None
         crm.tocar(op)
         if op.prioritaria:
             Oportunidad.objects.filter(pk=op.pk).update(prioritaria=False)
+        if resultado.contactado:
+            crm.completar_primer_contacto(op, usuario, f'habló por teléfono ({resultado.nombre})')
         if volver_a_llamar and op.activa:
             crm.crear_tarea(usuario, op.agente or usuario, f'Volver a llamar a {op.contacto.nombre}', volver_a_llamar,
                             oportunidad=op, tipo=Tarea.TIPO_LLAMADA)
